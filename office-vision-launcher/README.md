@@ -16,8 +16,8 @@ Agent 端的托盘小应用，替代 `scripts/service.sh`，macOS / Windows 通�
 
 1. 从 GitHub Releases 下载安装包（macOS 用 DMG / Windows 用 exe），新建一个专用文件夹，
    把应用与 `config.yaml` 都放进去（⚠️ 不要在 DMG 卷内直接运行）
-2. 编辑 `config.yaml`：填 `github_token`（私有仓库克隆必需，只读权限即可）、
-   `server_url` 指向服务器（如 `http://192.168.x.x:8000`）
+2. 编辑 `config.yaml`：`server_url` 指向服务器（如 `http://192.168.x.x:8000`）；
+   仓库已公开无需 Token，若改为私有仓库再填 `github_token`
 3. 启动应用：检测到环境缺失后自动完成 安装 uv → 克隆仓库 → 装依赖 → 下载模型，
    托盘图标变蓝并实时展示当前步骤，完成后自动拉起 Agent；失败时菜单显示原因，点击可重试
 
