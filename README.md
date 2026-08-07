@@ -4,8 +4,7 @@ AI-powered Office Behavior Analysis Platform —— 基于 AI 视觉的办公室
 
 定位为个人行为统计、健康分析与办公自动化（Home Assistant 联动），而非员工监控。
 
-<!-- TODO: Railway 模板创建完成后回填模板链接 -->
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/templates)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Fmonty8800%2Foffice-vision&utm_medium=integration&utm_source=button&utm_campaign=office-vision)
 
 
 ## 系统架构（多项目分离）
@@ -81,22 +80,20 @@ Dashboard、事件记录、自动休眠、实时监控可视化。
 Server（FastAPI）+ Dashboard（Next.js）+ PostgreSQL 可通过 Railway Template 一键部署；
 Agent 依赖摄像头与本地推理，不上云，仍运行在监控点电脑上。
 
-- **一键部署**：点击顶部 Deploy on Railway 按钮，Railway 会拉起三个服务并自动完成
-  服务间连线（DB URL、Dashboard → Server 代理地址）
+- **一键部署**：点击顶部 Deploy on Railway 按钮直达部署流程，仓库内各服务的
+  `railway.toml`（config-as-code）会被自动识别；需在模板编辑器中确认三个服务
+  （Postgres / server / dashboard，后两者 root directory 分别指向对应子目录）
+- **引用变量**：server 服务 `OVA_DATABASE_URL={{Postgres.DATABASE_URL}}`、
+  dashboard 服务 `OVA_SERVER_URL=https://{{server.FQDN}}`（需为 server 开启 Public Networking）
 - **部署完成后**：将 Agent `config.yaml` 的 `server_url` 改为云端 Server URL
   （新设备部署唯一必填项）
 - **费用**：Railway Hobby 计划 $5/月（含 $5 用量额度），本项目规模通常可被额度覆盖；
   服务不休眠、无冷启动
-- **构建配置**：各服务目录下的 `railway.toml`（config-as-code）由 Railpack 自动识别，
-  Server 经 `uv.lock` 安装依赖，Dashboard 自动识别 Next.js
+- **构建配置**：Railpack 经 `uv.lock` 安装 Server 依赖，Dashboard 自动识别 Next.js
 
-维护者首次发布模板（一次性操作）：
-
-1. Railway 新建项目 → 添加 PostgreSQL + 两个 GitHub 服务
-   （root directory 分别指定 `office-vision-server` / `office-vision-dashboard`）
-2. 配置引用变量：server 服务 `OVA_DATABASE_URL={{Postgres.DATABASE_URL}}`、
-   dashboard 服务 `OVA_SERVER_URL=https://{{server.FQDN}}`（需为 server 开启 Public Networking）
-3. 项目 Settings → Generate Template from Project → 复制模板链接回填顶部按钮
+可选：维护者部署验证后可在 Railway 项目 Settings → Generate Template from Project
+将完整三服务栈固化为模板，届时把顶部按钮链接替换为模板链接（`railway.com/new/template/<code>`），
+即可实现含数据库连线的全自动一键部署。
 
 注：云端 Dashboard 的 Agent 调试页（`:8100`）仅对本地环境可用，属预期行为。
 
