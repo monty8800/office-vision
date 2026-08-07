@@ -84,7 +84,11 @@ uv run python scripts/release.py             # 打包 + gh CLI 创建 Release
 
 > 部署目录结构：解压后 config.yaml 与应用本体同级放置，且 `office-vision-agent`
 > 目录位于 config.yaml 的上级目录旁（workdir 相对路径 `../office-vision-agent`）。
-> 在线升级只替换应用本体，不会覆盖用户已修改的 config.yaml。
+> config.yaml 缺失时应用会自动生成默认配置（优先部署目录，只读卷则落到
+> 用户配置目录）。在线升级只替换应用本体，不会覆盖用户已修改的 config.yaml。
+>
+> macOS 首次打开提示「已阻止以保护 Mac」（未签名应用）：右键 → 打开，或
+> `xattr -dr com.apple.quarantine "Office Vision Tray.app"` 解除隔离。
 
 ## 路线图（RFC-0008）
 
