@@ -171,6 +171,18 @@ def download_asset(release: Release, token: str) -> Path:
     return dest
 
 
+def _restore_unix_modes(zf: zipfile.ZipFile, extract_dir: Path) -> None:
+    """zipfile.extractall 不恢复 Unix 权限（可执行位丢失），按 zip 元数据补回。
+    macOS 主可执行文件失 +x 后系统直接报"应用程序无法打开"，自更新必挂。"""
+    for info in zf.infolist():
+        mode = (info.external_attr >> 16) & 0o7777
+        if not mode or info.is_dir():
+            continue
+        target = extract_dir / info.filename
+        if target.is_file():
+            target.chmod(mode)
+
+
 def apply_update(asset_path: Path) -> str:
     """用下载好的新版本替换当前应用并重启，返回给用户的提示。
 
@@ -182,6 +194,7 @@ def apply_update(asset_path: Path) -> str:
     extract_dir = asset_path.parent / "extracted"
     with zipfile.ZipFile(asset_path) as zf:
         zf.extractall(extract_dir)
+        _restore_unix_modes(zf, extract_dir)
     if _IS_WINDOWS:
         # 新版 zip 为 onedir 目录：找包含 exe 的顶层目录做整目录替换
         app_dirs = [p for p in extract_dir.iterdir() if p.is_dir() and any(p.rglob("*.exe"))]
