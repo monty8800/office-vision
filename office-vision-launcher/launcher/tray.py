@@ -28,8 +28,8 @@ class UpdateState(Enum):
 
 _COLOR_RUNNING = (34, 197, 94)     # 绿：Agent 运行中
 _COLOR_STOPPED = (148, 163, 184)   # 灰：已停止
-_COLOR_FAILED = (239, 68, 68)      # 红：崩溃熔断
-_COLOR_UPDATING = (59, 130, 246)   # 蓝：升级进行中
+_COLOR_FAILED = (239, 68, 68)      # 红：崩溃熔断 / 部署失败
+_COLOR_UPDATING = (59, 130, 246)   # 蓝：升级或首次部署进行中
 
 _APP_NAME = "Office Vision Agent"
 
@@ -82,6 +82,11 @@ class TrayApp:
         return pystray.Menu(*items)
 
     def _service_title(self, name: str, svc) -> str:
+        # 首次部署（新设备）状态优先展示
+        if self.manager.deploy_state == "deploying":
+            return f"{svc.spec.label}：正在部署环境（{self.manager.deploy_step}）…"
+        if self.manager.deploy_state == "failed":
+            return f"{svc.spec.label}：部署失败 ✖（{self.manager.deploy_reason}），点击重试"
         if self.manager.running(name):
             state = "运行中 ●"
             if self.manager.reachable(name):
@@ -100,6 +105,11 @@ class TrayApp:
         return action
 
     def _do_toggle(self, name: str) -> None:
+        if self.manager.deploy_state == "deploying":
+            return  # 部署进行中，忽略点击
+        if self.manager.deploy_state == "failed":
+            self.manager.start(name)  # 重试部署
+            return
         if self.manager.running(name):
             self.manager.stop(name)
         else:
@@ -193,7 +203,12 @@ class TrayApp:
             title = f"{_APP_NAME}：已停止"
             with self._lock:
                 updating = self.update_state in (UpdateState.CHECKING, UpdateState.DOWNLOADING)
-            if updating:
+            if self.manager.deploy_state == "deploying":
+                color = _COLOR_UPDATING
+                title = f"{_APP_NAME}：首次部署中（{self.manager.deploy_step}）…"
+            elif self.manager.deploy_state == "failed":
+                color, title = _COLOR_FAILED, f"{_APP_NAME}：部署失败，点击菜单重试"
+            elif updating:
                 color, title = _COLOR_UPDATING, f"{_APP_NAME}：升级中…"
             else:
                 failed = any(svc.failed for svc in self.manager.services.values())

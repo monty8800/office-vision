@@ -16,6 +16,8 @@ import yaml
 DEFAULT_CONFIG_YAML = """\
 # Office Vision Agent 托盘应用配置（首次启动自动生成）
 # 托盘仅托管 Agent；Server / Dashboard 不在托管范围。
+# 新设备首次启动会自动部署环境（克隆仓库/装依赖/下模型），
+# 私有仓库克隆需要 github_token（GitHub Personal Access Token，只读权限即可）。
 
 github_repo: "monty8800/office-vision"
 github_token: ""

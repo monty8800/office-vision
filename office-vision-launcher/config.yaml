@@ -3,8 +3,9 @@
 # 部署形态：本应用只运行在 Agent 端（监控点电脑），Server 与 Dashboard 在远程服务器。
 
 # 在线升级：从 GitHub Releases 下载新版本资产（可用环境变量覆盖）
+# 新设备首次启动会自动部署环境（克隆仓库/装依赖/下模型），克隆同样依赖此仓库配置
 github_repo: "monty8800/office-vision"
-# 私有仓库需 Token（建议用环境变量 OVA_GITHUB_TOKEN，不要明文写入本文件）
+# 私有仓库需 Token（自动部署与在线升级共用；建议用环境变量 OVA_GITHUB_TOKEN，不要明文写入本文件）
 github_token: ""
 # 资产名模板：{os}=darwin|windows，两平台均为 zip（内含应用本体 + config.yaml）
 asset_pattern: "office-vision-tray-{os}.zip"

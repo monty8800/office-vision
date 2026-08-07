@@ -16,6 +16,7 @@ from pathlib import Path
 import psutil
 
 from .config import ServiceSpec
+from .deploy import Deployer, DeployError
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -117,7 +118,11 @@ class ManagedService:
 
 
 class ServiceManager:
-    """按配置托管服务：start 后由看门狗线程保证进程存活，stop 时彻底终止进程树。"""
+    """按配置托管服务：start 后由看门狗线程保证进程存活，stop 时彻底终止进程树。
+
+    环境缺失（新设备首次运行）时自动触发部署（克隆仓库/装依赖/下模型），
+    部署进度与结果通过 deploy_state / deploy_step / deploy_reason 供托盘展示。
+    """
 
     def __init__(
         self,
@@ -125,11 +130,16 @@ class ServiceManager:
         restart_delay: float,
         log_dir: Path,
         server_url: str = "",
+        deployer: Deployer | None = None,
     ):
         self.restart_delay = restart_delay
         self.server_url = server_url
+        self.deployer = deployer
         self.log_dir = log_dir
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.deploy_state = "idle"  # idle / deploying / failed
+        self.deploy_step = ""
+        self.deploy_reason = ""
         self.services: dict[str, ManagedService] = {
             spec.name: ManagedService(spec=spec, log_dir=log_dir) for spec in specs
         }
@@ -150,9 +160,18 @@ class ServiceManager:
 
     def start(self, name: str) -> None:
         svc = self.services[name]
-        if self.running(name):
+        if self.running(name) or self.deploy_state == "deploying":
             return
-        # 前置检查：工作目录缺失时直接标记失败，避免静默无响应
+        # 环境缺失：新设备首次运行时先自动部署（克隆仓库/装依赖/下模型）
+        if not svc.spec.workdir.is_dir() and self.deployer is not None:
+            self.deploy_state = "deploying"
+            self.deploy_step = "准备中"
+            self.deploy_reason = ""
+            threading.Thread(
+                target=self._run_deploy, args=(svc,), name="deploy", daemon=True
+            ).start()
+            return
+        # 前置检查：工作目录缺失且无法自动部署时直接标记失败，避免静默无响应
         if not svc.spec.workdir.is_dir():
             svc.failed = True
             svc.reason = f"找不到目录 {svc.spec.workdir}"
@@ -185,6 +204,22 @@ class ServiceManager:
             self.stop(name)
 
     # ---- 内部 ----
+
+    def _run_deploy(self, svc: ManagedService) -> None:
+        """后台执行环境部署，成功后自动拉起服务；失败记录原因供菜单重试。"""
+        assert self.deployer is not None
+        self._append_log(svc, "检测到环境未部署，开始自动部署…\n")
+        try:
+            self.deployer.run(on_step=lambda label: setattr(self, "deploy_step", label))
+        except (DeployError, OSError) as exc:
+            self.deploy_state = "failed"
+            self.deploy_reason = str(exc)
+            self._append_log(svc, f"自动部署失败：{exc}\n")
+            return
+        self.deploy_state = "idle"
+        self.deploy_step = ""
+        self._append_log(svc, "环境部署完成，启动服务\n")
+        self.start(svc.spec.name)
 
     def _sync_agent_config(self, svc: ManagedService) -> None:
         """启动前把托盘应用配置的服务地址同步到 agent.yaml（仅存在时生效）。"""
