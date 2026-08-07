@@ -6,6 +6,9 @@
 与 config.yaml 的 workdir 相对路径 "../office-vision-agent" 保持一致。
 只检出 office-vision-agent（sparse-checkout）：托盘仅托管 Agent，
 Server/Dashboard/训练目录不应占用监控设备磁盘。
+模型文件（models/*.pt、*.task）已随仓库分发，检出即就位；
+下载脚本仅在文件缺失时兜底（避免依赖境外存储导致部署卡死）。
+所有外部命令均带超时，弱网环境下会明确报错而非无限挂起。
 """
 
 from __future__ import annotations
@@ -44,8 +47,21 @@ def mask_url(text: str) -> str:
     return text
 
 
-def _run(cmd: list[str], cwd: Path | None = None) -> None:
-    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
+def _run(cmd: list[str], cwd: Path | None = None, timeout: float = 600.0) -> None:
+    """执行外部命令：超时后明确报错（弱网环境下无超时会无限挂起，
+    托盘将永远停在“正在部署环境”）。"""
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise DeployError(
+            f"命令超时（{timeout:.0f} 秒）：{' '.join(cmd[:2])}，请检查网络后重试"
+        ) from None
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
         raise DeployError(detail[-1] if detail else f"命令失败：{' '.join(cmd[:2])}")
@@ -82,10 +98,13 @@ def _ensure_uv() -> str:
                     "ByPass",
                     "-Command",
                     "irm https://astral.sh/uv/install.ps1 | iex",
-                ]
+                ],
+                timeout=300,
             )
         else:
-            _run(["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
+            _run(
+                ["sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"], timeout=300
+            )
     except DeployError:
         raise DeployError("uv 安装失败（请检查网络）") from None
     uv = _uv_path()
@@ -94,8 +113,8 @@ def _ensure_uv() -> str:
     return uv
 
 
-def _git(root: Path, *args: str) -> None:
-    _run(["git", "-C", str(root), *args])
+def _git(root: Path, *args: str, timeout: float = 600.0) -> None:
+    _run(["git", "-C", str(root), *args], timeout=timeout)
 
 
 # 只检出 Agent 运行所需目录：agent 本体 + 自训练香烟检测权重
@@ -117,7 +136,7 @@ def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
         else:
             _git(repo_root, "remote", "set-url", "origin", url)
         _git(repo_root, "sparse-checkout", "set", "--cone", *_SPARSE_PATHS)
-        _git(repo_root, "fetch", "--depth", "1", "origin", "HEAD")
+        _git(repo_root, "fetch", "--depth", "1", "origin", "HEAD", timeout=900)
         _git(repo_root, "checkout", "-f", "FETCH_HEAD")
     except FileNotFoundError:
         raise DeployError("未找到 git（macOS 可执行 xcode-select --install 安装）") from None
@@ -130,14 +149,16 @@ def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
 
 def _install_deps(uv: str, agent_workdir: Path) -> None:
     try:
-        _run([uv, "sync"], cwd=agent_workdir)
+        _run([uv, "sync"], cwd=agent_workdir, timeout=1200)
     except DeployError as exc:
         raise DeployError(f"依赖安装失败：{exc}") from exc
 
 
 def _download_models(uv: str, agent_workdir: Path) -> None:
+    # 模型已随仓库分发（检出即就位），脚本检测存在会直接跳过，
+    # 此步仅作为缺失时的兜底下载
     try:
-        _run([uv, "run", "python", "scripts/download_models.py"], cwd=agent_workdir)
+        _run([uv, "run", "python", "scripts/download_models.py"], cwd=agent_workdir, timeout=600)
     except DeployError as exc:
         raise DeployError(f"模型下载失败：{exc}") from exc
 

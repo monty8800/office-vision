@@ -16,7 +16,7 @@ from pathlib import Path
 import psutil
 
 from .config import ServiceSpec
-from .deploy import Deployer, DeployError
+from .deploy import Deployer
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -246,15 +246,20 @@ class ServiceManager:
             _kill_tree(pid)
 
     def _run_deploy(self, svc: ManagedService) -> None:
-        """后台执行环境部署，成功后自动拉起服务；失败记录原因供菜单重试。"""
+        """后台执行环境部署，成功后自动拉起服务；失败记录原因供菜单重试。
+
+        兜底捕获所有异常：任何未预期的异常（非 DeployError/OSError）若让
+        部署线程静默退出，托盘会永远停在“正在部署环境”且无任何提示。
+        """
         assert self.deployer is not None
         self._append_log(svc, "检测到环境未部署，开始自动部署…\n")
         try:
             self.deployer.run(on_step=lambda label: setattr(self, "deploy_step", label))
-        except (DeployError, OSError) as exc:
+        except Exception as exc:  # noqa: BLE001
             self.deploy_state = "failed"
-            self.deploy_reason = str(exc)
-            self._append_log(svc, f"自动部署失败：{exc}\n")
+            reason = str(exc) or type(exc).__name__
+            self.deploy_reason = reason
+            self._append_log(svc, f"自动部署失败：{reason}\n")
             return
         self.deploy_state = "idle"
         self.deploy_step = ""

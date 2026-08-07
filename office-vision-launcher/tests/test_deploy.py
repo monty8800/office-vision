@@ -1,7 +1,8 @@
-"""launcher.deploy 测试：克隆地址构建、token 脱敏、就绪判定与部署编排。"""
+"""launcher.deploy 测试：克隆地址构建、token 脱敏、就绪判定、超时与部署编排。"""
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,17 @@ def test_agent_deployed_requires_agent_yaml(tmp_path: Path) -> None:
     (workdir / "config").mkdir(parents=True)
     (workdir / "config" / "agent.yaml").write_text("agent: {}", encoding="utf-8")
     assert deploy.agent_deployed(workdir)
+
+
+def test_run_timeout_raises_deploy_error(tmp_path: Path, monkeypatch: object) -> None:
+    """子进程超时必须转为 DeployError（否则部署线程挂死，托盘永远显示部署中）。"""
+
+    def fake_run(cmd: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=1)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(deploy.subprocess, "run", fake_run)
+    with pytest.raises(DeployError, match="超时"):
+        deploy._run(["git", "fetch"], timeout=1)  # noqa: SLF001
 
 
 def test_deployer_run_order_and_skip_clone_when_deployed(
