@@ -105,6 +105,9 @@ def make_dmg() -> Path:
         src = Path(tmp) / "dmg-src"
         src.mkdir()
         shutil.copytree(app_dir, src / f"{APP_NAME}.app", symlinks=True)
+        # 放入 Applications 替身：打开 DMG 即呈现经典"拖入应用程序文件夹"画面，
+        # 否则用户双击 App 只是从挂载卷临时运行，不会出现在"应用程序"列表
+        (src / "Applications").symlink_to("/Applications")
         # 配置文件随 DMG 分发，用户可将两者一起拷入部署目录；
         # 即使不拷，应用也会自动生成默认配置
         shutil.copy(STAGE / "config.yaml", src / "config.yaml")
