@@ -214,7 +214,12 @@ class TrayApp:
         self.icon.update_menu()
 
     def _status_loop(self) -> None:
-        """每 2 秒刷新托盘图标颜色、提示文案与菜单标题。"""
+        """每 2 秒刷新托盘图标颜色、提示文案与菜单标题。
+
+        注意：pystray.Icon 没有 update() 方法（icon/title 的 setter 已即时生效），
+        此前误调 icon.update() 导致 AttributeError 被吞掉、本循环静默退出，
+        状态永远定格在启动时（如实际运行中却显示已停止）。任何刷新异常都只跳过本轮。
+        """
         while True:
             color = _COLOR_STOPPED
             title = f"{_APP_NAME}：已停止"
@@ -234,13 +239,12 @@ class TrayApp:
                     title = f"{_APP_NAME}：运行中"
                 elif failed:
                     color, title = _COLOR_FAILED, f"{_APP_NAME}：启动失败，请查看日志"
-            self.icon.icon = _make_icon(color)
-            self.icon.title = title
-            self._refresh_menu()
             try:
-                self.icon.update()
-            except Exception:  # 某些平台退出时 update 会抛错，忽略
-                return
+                self.icon.icon = _make_icon(color)
+                self.icon.title = title
+                self._refresh_menu()
+            except Exception:
+                pass  # 单次刷新失败不能杀死循环，下一轮重试
             threading.Event().wait(2.0)
 
     def _quit(self, _icon, _item) -> None:
