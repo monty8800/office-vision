@@ -15,13 +15,12 @@ import yaml
 # 首次启动且 config.yaml 缺失时写入的默认配置（与仓库 config.yaml 保持同步）
 DEFAULT_CONFIG_YAML = """\
 # Office Vision Agent 托盘应用配置（首次启动自动生成）
-# 部署形态：本应用只运行在 Agent 端（监控点电脑），Server 与 Dashboard 在远程服务器。
+# 托盘仅托管 Agent；Server / Dashboard 不在托管范围。
 
 github_repo: "monty8800/office-vision"
 github_token: ""
 asset_pattern: "office-vision-tray-{os}.zip"
 
-# Office Vision Server 服务地址：启动 Agent 前自动同步到 agent.yaml 的 server.url
 server_url: "http://localhost:8000"
 
 services:
@@ -57,6 +56,17 @@ class AppConfig:
     services: list[ServiceSpec]
     restart_delay_seconds: float
     dashboard_url: str
+
+
+def app_base_dir() -> Path:
+    """部署根目录（config.yaml / data/logs 所在层级）：
+    macOS 冻结模式从 Contents/MacOS 逐级向上 4 级到 .app 旁，
+    Windows 冻结模式取 exe 所在目录，开发模式取子项目根目录。"""
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable).resolve()
+        base = exe.parent.parent.parent.parent if sys.platform == "darwin" else exe.parent
+        return base
+    return Path(__file__).resolve().parent.parent
 
 
 def _candidate_dirs() -> list[Path]:

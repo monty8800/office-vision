@@ -109,6 +109,7 @@ class ManagedService:
     thread: threading.Thread | None = None
     crash_count: int = 0
     failed: bool = False
+    reason: str = ""  # 启动失败原因（托盘菜单展示）
 
     @property
     def log_file(self) -> Path:
@@ -151,9 +152,16 @@ class ServiceManager:
         svc = self.services[name]
         if self.running(name):
             return
+        # 前置检查：工作目录缺失时直接标记失败，避免静默无响应
+        if not svc.spec.workdir.is_dir():
+            svc.failed = True
+            svc.reason = f"找不到目录 {svc.spec.workdir}"
+            self._append_log(svc, f"启动失败：{svc.reason}\n")
+            return
         self._sync_agent_config(svc)
         svc.stop_flag.clear()
         svc.failed = False
+        svc.reason = ""
         svc.crash_count = 0
         svc.thread = threading.Thread(
             target=self._supervise, args=(svc,), name=f"watchdog-{name}", daemon=True
@@ -212,6 +220,7 @@ class ServiceManager:
             except OSError as exc:
                 self._append_log(svc, f"启动失败：{exc}\n")
                 svc.failed = True
+                svc.reason = str(exc)
                 return
             code = svc.proc.wait()
             svc.proc = None
@@ -225,6 +234,7 @@ class ServiceManager:
                 if svc.crash_count >= _MAX_CRASH_LOOP:
                     self._append_log(svc, f"连续 {svc.crash_count} 次快速崩溃，停止自动重启\n")
                     svc.failed = True
+                    svc.reason = "连续快速崩溃，已熔断（详见日志）"
                     return
             self._append_log(
                 svc, f"进程退出（code={code}），{self.restart_delay:.0f} 秒后自动重启\n"

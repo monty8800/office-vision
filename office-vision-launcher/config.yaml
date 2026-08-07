@@ -13,7 +13,7 @@ asset_pattern: "office-vision-tray-{os}.zip"
 # （Agent 配置以 YAML 为唯一源，本应用作为部署入口代为写入），可用 OVA_SERVER_URL 覆盖
 server_url: "http://localhost:8000"
 
-# 受管服务：仅本地 Agent（Server/Dashboard 运行在远程服务器）
+# 受管服务：仅 Agent（Server / Dashboard 由用户自行启动，不在托盘托管范围）
 services:
   - name: agent
     label: "Agent"
@@ -24,5 +24,5 @@ services:
 # 崩溃自动重启
 restart_delay_seconds: 3
 
-# 远程 Dashboard 地址（托盘菜单一键打开，指向部署 Server 的服务器）
+# Dashboard 地址（托盘菜单一键打开）
 dashboard_url: "http://localhost:3000"

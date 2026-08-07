@@ -6,9 +6,9 @@ from pathlib import Path
 
 
 def _crash_log_path() -> Path:
-    """崩溃日志位置：可执行文件旁的 data/logs/（与正常运行日志一致）。"""
+    """崩溃日志位置：部署目录的 data/logs/（与正常运行日志一致）。"""
     exe = Path(sys.executable)
-    base = exe.parent.parent.parent if sys.platform == "darwin" else exe.parent
+    base = exe.parent.parent.parent.parent if sys.platform == "darwin" else exe.parent
     log_dir = base / "data" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / "crash.log"

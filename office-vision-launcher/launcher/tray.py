@@ -88,6 +88,8 @@ class TrayApp:
                 state = "运行中 ●（端口正常）"
             return f"{svc.spec.label}：{state}，点击停止"
         if svc.failed:
+            if svc.reason:
+                return f"{svc.spec.label}：启动失败 ✖（{svc.reason}），点击重试"
             return f"{svc.spec.label}：启动失败 ✖，点击重试"
         return f"{svc.spec.label}：已停止，点击启动"
 
