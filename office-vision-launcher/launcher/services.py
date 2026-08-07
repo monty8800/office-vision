@@ -60,6 +60,34 @@ def _port_open(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) == 0
 
 
+def _port_holder_pids(port: int) -> list[int]:
+    """查找占用端口的进程 PID（查询失败返回空列表，不阻断主流程）。"""
+    try:
+        if _IS_WINDOWS:
+            out = subprocess.run(
+                ["netstat", "-ano", "-p", "TCP"],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            ).stdout
+            pids = []
+            for line in out.splitlines():
+                if f":{port}" in line and "LISTENING" in line:
+                    parts = line.split()
+                    if parts and parts[-1].isdigit():
+                        pids.append(int(parts[-1]))
+            return pids
+        out = subprocess.run(
+            ["lsof", "-ti", f"tcp:{port}"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+        return [int(p) for p in out.split() if p.strip().isdigit()]
+    except (OSError, ValueError):
+        return []
+
+
 def _kill_tree(pid: int) -> None:
     """终止进程及其所有子进程（uv/npm 会派生子进程）。"""
     try:
@@ -162,6 +190,9 @@ class ServiceManager:
         svc = self.services[name]
         if self.running(name) or self.deploy_state == "deploying":
             return
+        # 看门狗存活中（进程退出后处于重启等待窗口）：不重复启动，避免双进程抢摄像头
+        if svc.thread is not None and svc.thread.is_alive():
+            return
         # 环境缺失：新设备首次运行时先自动部署（克隆仓库/装依赖/下模型）
         if not svc.spec.workdir.is_dir() and self.deployer is not None:
             self.deploy_state = "deploying"
@@ -178,6 +209,9 @@ class ServiceManager:
             self._append_log(svc, f"启动失败：{svc.reason}\n")
             return
         self._sync_agent_config(svc)
+        # 接管端口残留进程（如托盘异常退出遗留的孤儿 Agent）：
+        # 不清理则新进程与孤儿抢摄像头，且托盘状态与实际运行状态脱节
+        self._kill_port_holders(svc)
         svc.stop_flag.clear()
         svc.failed = False
         svc.reason = ""
@@ -204,6 +238,12 @@ class ServiceManager:
             self.stop(name)
 
     # ---- 内部 ----
+
+    def _kill_port_holders(self, svc: ManagedService) -> None:
+        """启动前清理占用服务端口的残留进程，确保托盘状态与实际进程一致。"""
+        for pid in _port_holder_pids(svc.spec.port):
+            self._append_log(svc, f"清理占用端口 {svc.spec.port} 的残留进程（pid={pid}）\n")
+            _kill_tree(pid)
 
     def _run_deploy(self, svc: ManagedService) -> None:
         """后台执行环境部署，成功后自动拉起服务；失败记录原因供菜单重试。"""

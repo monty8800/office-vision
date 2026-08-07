@@ -50,6 +50,7 @@ class TrayApp:
         self.update_message = ""  # 错误提示 / 新版本号
         self._pending_release: updater.Release | None = None
         self._lock = threading.Lock()
+        self._last_menu_key: tuple[str, ...] | None = None  # 菜单标题指纹，变化才重建
 
         self.icon = pystray.Icon(
             _APP_NAME,
@@ -96,6 +97,9 @@ class TrayApp:
             if svc.reason:
                 return f"{svc.spec.label}：启动失败 ✖（{svc.reason}），点击重试"
             return f"{svc.spec.label}：启动失败 ✖，点击重试"
+        if svc.thread is not None and svc.thread.is_alive():
+            # 看门狗存活但进程已退出：处于重启等待窗口，即将自动拉起
+            return f"{svc.spec.label}：已停止，正在自动重启…"
         return f"{svc.spec.label}：已停止，点击启动"
 
     def _toggle_service(self, name: str):
@@ -196,8 +200,21 @@ class TrayApp:
 
     # ---- 状态刷新 ----
 
+    def _refresh_menu(self) -> None:
+        """重建菜单刷新标题：pystray 的 callable 标题仅首次构建时求值，
+        不重建菜单会导致状态文案永远停留在启动时的值（如一直显示“已停止”）。
+        仅在标题指纹变化时重建，避免频繁 setMenu_ 干扰已展开的菜单。"""
+        key = tuple(
+            self._service_title(name, svc) for name, svc in self.manager.services.items()
+        ) + (self._update_title(),)
+        if key == self._last_menu_key:
+            return
+        self._last_menu_key = key
+        self.icon.menu = self._build_menu()
+        self.icon.update_menu()
+
     def _status_loop(self) -> None:
-        """每 2 秒刷新托盘图标颜色与提示文案。"""
+        """每 2 秒刷新托盘图标颜色、提示文案与菜单标题。"""
         while True:
             color = _COLOR_STOPPED
             title = f"{_APP_NAME}：已停止"
@@ -219,6 +236,7 @@ class TrayApp:
                     color, title = _COLOR_FAILED, f"{_APP_NAME}：启动失败，请查看日志"
             self.icon.icon = _make_icon(color)
             self.icon.title = title
+            self._refresh_menu()
             try:
                 self.icon.update()
             except Exception:  # 某些平台退出时 update 会抛错，忽略
