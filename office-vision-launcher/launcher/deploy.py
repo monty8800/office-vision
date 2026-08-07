@@ -4,6 +4,8 @@
 新监控设备只需下载托盘应用并启动，无需手动执行任何命令。
 目录约定：仓库克隆到托盘目录的上级（与 office-vision-agent 平级），
 与 config.yaml 的 workdir 相对路径 "../office-vision-agent" 保持一致。
+只检出 office-vision-agent（sparse-checkout）：托盘仅托管 Agent，
+Server/Dashboard/训练目录不应占用监控设备磁盘。
 """
 
 from __future__ import annotations
@@ -96,8 +98,15 @@ def _git(root: Path, *args: str) -> None:
     _run(["git", "-C", str(root), *args])
 
 
+_SPARSE_PATH = "office-vision-agent"
+
+
 def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
-    """把仓库检出到 repo_root（可能已存在托盘目录，故用 init+fetch 而非 clone）。"""
+    """把仓库检出到 repo_root（可能已存在托盘目录，故用 init+fetch 而非 clone）。
+
+    sparse-checkout 只检出 office-vision-agent：对已全量检出的旧部署，
+    重新应用规则 + checkout 会自动清掉其余子项目目录。
+    """
     url = build_clone_url(repo, token)
     try:
         if not (repo_root / ".git").exists():
@@ -105,6 +114,7 @@ def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
             _git(repo_root, "remote", "add", "origin", url)
         else:
             _git(repo_root, "remote", "set-url", "origin", url)
+        _git(repo_root, "sparse-checkout", "set", "--cone", _SPARSE_PATH)
         _git(repo_root, "fetch", "--depth", "1", "origin", "HEAD")
         _git(repo_root, "checkout", "-f", "FETCH_HEAD")
     except FileNotFoundError:
@@ -147,7 +157,7 @@ class Deployer:
         step("检查 uv 环境")
         uv = _ensure_uv()
         if not agent_deployed(self.agent_workdir):
-            step("克隆仓库")
+            step("克隆仓库（仅 Agent 目录）")
             _clone_repo(self.repo, self.token, self.repo_root)
         step("安装依赖（约 1~3 分钟）")
         _install_deps(uv, self.agent_workdir)

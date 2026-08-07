@@ -1,5 +1,9 @@
 """在线升级：从 GitHub Releases 检查新版本、下载平台资产、自替换并重启。
 
+检查更新走 releases.atom 订阅源（不经 api.github.com）：
+未认证 API 每 IP 每小时仅 60 次，共享出口 IP 极易触发 403 限流；
+atom 源无此限制，资产下载链接可由 tag 直接推导。
+
 资产约定（由 CI 打包上传，两平台均为 zip）：
 - macOS:   office-vision-tray-darwin.zip（Office Vision Tray.app + config.yaml）
 - Windows: office-vision-tray-windows.zip（onedir 目录 + config.yaml）
@@ -15,6 +19,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,8 +28,8 @@ import requests
 
 from . import __version__
 
-_API = "https://api.github.com"
 _IS_WINDOWS = sys.platform == "win32"
+_ATOM_NS = "{http://www.w3.org/2005/Atom}"
 
 
 class UpdateError(Exception):
@@ -36,7 +41,7 @@ class Release:
     tag: str
     name: str
     body: str
-    asset_url: str  # API 资产地址（带 token 可下载私有仓库附件）
+    asset_url: str  # 资产直链（公开仓库无需 token）
     asset_size: int
 
 
@@ -65,14 +70,51 @@ def _expected_asset_name() -> str:
     return f"office-vision-tray-{os_name}.zip"
 
 
-def fetch_latest_release(repo: str, token: str, asset_pattern: str) -> Release | None:
-    """拉取最新 Release；无 Release 或无匹配资产返回 None。"""
-    url = f"{_API}/repos/{repo}/releases/latest"
-    resp = requests.get(url, headers=_headers(token), timeout=15)
+def _fetch_atom(repo: str, token: str, asset_pattern: str) -> Release | None:
+    """从 releases.atom 取最新 Release（无 API 限流）；无 Release 返回 None。"""
+    url = f"https://github.com/{repo}/releases.atom"
+    try:
+        resp = requests.get(url, headers=_headers(token), timeout=(5, 15))
+    except requests.RequestException as exc:
+        raise UpdateError(f"连接 GitHub 失败：{exc}") from exc
     if resp.status_code == 404:
-        return None  # 仓库尚无 Release
+        return None
     if resp.status_code != 200:
-        raise UpdateError(f"GitHub API 返回 {resp.status_code}（私有仓库需配置 OVA_GITHUB_TOKEN）")
+        raise UpdateError(f"GitHub 返回 {resp.status_code}")
+    try:
+        root = ET.fromstring(resp.content)
+    except ET.ParseError as exc:
+        raise UpdateError(f"releases.atom 解析失败：{exc}") from exc
+    entry = root.find(f"{_ATOM_NS}entry")
+    if entry is None:
+        return None  # 仓库尚无 Release
+    # entry id 形如 tag:github.com,2008:Repository/123456/v0.2.1，末段即 tag
+    entry_id = entry.findtext(f"{_ATOM_NS}id", default="")
+    tag = entry_id.rsplit("/", 1)[-1]
+    if not tag:
+        raise UpdateError("releases.atom 缺少版本号")
+    asset = asset_pattern.format(os="windows" if _IS_WINDOWS else "darwin")
+    return Release(
+        tag=tag,
+        name=entry.findtext(f"{_ATOM_NS}title", default=tag) or tag,
+        body=entry.findtext(f"{_ATOM_NS}content", default="") or "",
+        # 资产直链由 tag 推导，不经 API；下载时自动跟随重定向到 CDN
+        asset_url=f"https://github.com/{repo}/releases/download/{tag}/{asset}",
+        asset_size=0,
+    )
+
+
+def _fetch_api(repo: str, token: str, asset_pattern: str) -> Release | None:
+    """API 兑底：仅在配置了 token 且 atom 不可用时走（认证后限额 5000/小时）。"""
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    try:
+        resp = requests.get(url, headers=_headers(token), timeout=(5, 15))
+    except requests.RequestException as exc:
+        raise UpdateError(f"连接 GitHub 失败：{exc}") from exc
+    if resp.status_code == 404:
+        return None
+    if resp.status_code != 200:
+        raise UpdateError(f"GitHub API 返回 {resp.status_code}")
 
     data = resp.json()
     os_name = "windows" if _IS_WINDOWS else "darwin"
@@ -89,6 +131,20 @@ def fetch_latest_release(repo: str, token: str, asset_pattern: str) -> Release |
     raise UpdateError(f"Release {data['tag_name']} 缺少当前平台的资产：{wanted}")
 
 
+def fetch_latest_release(repo: str, token: str, asset_pattern: str) -> Release | None:
+    """拉取最新 Release：优先 atom 订阅源（避开未认证 API 限流），
+    atom 异常且配置了 token 时回退到 API；无 Release 返回 None。"""
+    try:
+        release = _fetch_atom(repo, token, asset_pattern)
+    except UpdateError:
+        if not token:
+            raise
+    else:
+        # atom 可达即为准（含无 Release 的情况），不再查 API
+        return release
+    return _fetch_api(repo, token, asset_pattern)
+
+
 def has_update(release: Release) -> bool:
     return _parse_version(release.tag) > _parse_version(current_version())
 
@@ -96,15 +152,20 @@ def has_update(release: Release) -> bool:
 def download_asset(release: Release, token: str) -> Path:
     """流式下载资产到临时目录，返回文件路径。"""
     headers = _headers(token)
-    headers["Accept"] = "application/octet-stream"  # API 资产地址需此 Accept 才返回二进制
-    with requests.get(release.asset_url, headers=headers, stream=True, timeout=30) as resp:
-        if resp.status_code != 200:
-            raise UpdateError(f"资产下载失败：HTTP {resp.status_code}")
-        tmp_dir = Path(tempfile.mkdtemp(prefix="ov-tray-update-"))
-        dest = tmp_dir / (_expected_asset_name())
-        with open(dest, "wb") as fh:
-            for chunk in resp.iter_content(chunk_size=1 << 16):
-                fh.write(chunk)
+    # API 资产地址需此 Accept 才返回二进制；直链不受影响
+    headers["Accept"] = "application/octet-stream"
+    try:
+        with requests.get(release.asset_url, headers=headers, stream=True,
+                          timeout=(10, 60)) as resp:
+            if resp.status_code != 200:
+                raise UpdateError(f"资产下载失败：HTTP {resp.status_code}")
+            tmp_dir = Path(tempfile.mkdtemp(prefix="ov-tray-update-"))
+            dest = tmp_dir / (_expected_asset_name())
+            with open(dest, "wb") as fh:
+                for chunk in resp.iter_content(chunk_size=1 << 16):
+                    fh.write(chunk)
+    except requests.RequestException as exc:
+        raise UpdateError(f"资产下载失败：{exc}") from exc
     if dest.stat().st_size == 0:
         raise UpdateError("下载文件为空，请检查网络后重试")
     return dest
