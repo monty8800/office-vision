@@ -52,6 +52,15 @@ class UsersSection:
     default_user: str = "admin"
 
 
+def _normalize_database_url(url: str) -> str:
+    """裸 postgres(ql):// 连接串补 asyncpg 驱动（PaaS 注入的 URL 通常不带驱动名）。"""
+    if url.startswith(("postgres://", "postgresql://")) and "+" not in url.split("://", 1)[0]:
+        return url.replace("postgres://", "postgresql+asyncpg://", 1).replace(
+            "postgresql://", "postgresql+asyncpg://", 1
+        )
+    return url
+
+
 @dataclass(frozen=True)
 class ServerConfig:
     """全部配置的聚合视图。"""
@@ -65,7 +74,8 @@ class ServerConfig:
     @property
     def database_url(self) -> str:
         # 环境变量优先（容器化部署覆盖）
-        return os.environ.get("OVA_DATABASE_URL") or self.database.url
+        url = os.environ.get("OVA_DATABASE_URL") or self.database.url
+        return _normalize_database_url(url)
 
 
 def _section(data: dict[str, Any], key: str) -> dict[str, Any]:

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from server.core.config import load_config
+from server.core.config import _normalize_database_url, load_config
 
 
 class TestLoadConfig:
@@ -41,3 +41,37 @@ class TestLoadConfig:
         config_file.write_text("- 1\n- 2\n", encoding="utf-8")
         with pytest.raises(ValueError, match="格式错误"):
             load_config(config_file)
+
+
+class TestDatabaseUrlNormalize:
+    """PaaS 注入的裸 postgres 连接串自动补 asyncpg 驱动。"""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (
+                "postgres://u:p@host:5432/db",
+                "postgresql+asyncpg://u:p@host:5432/db",
+            ),
+            (
+                "postgresql://u:p@host:5432/db",
+                "postgresql+asyncpg://u:p@host:5432/db",
+            ),
+        ],
+    )
+    def test_裸连接串补驱动(self, raw: str, expected: str) -> None:
+        assert _normalize_database_url(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "sqlite+aiosqlite:///data/office_vision.db",
+            "postgresql+asyncpg://u:p@host:5432/db",
+        ],
+    )
+    def test_已带驱动或sqlite原样保留(self, raw: str) -> None:
+        assert _normalize_database_url(raw) == raw
+
+    def test_环境变量注入后归一化(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OVA_DATABASE_URL", "postgresql://u:p@host:5432/db")
+        assert load_config().database_url == "postgresql+asyncpg://u:p@host:5432/db"

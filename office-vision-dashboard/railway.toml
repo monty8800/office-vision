@@ -1,0 +1,11 @@
+# Railway config-as-code（Dashboard 服务，root directory: office-vision-dashboard）
+# Railpack 自动识别 Next.js；启动时 Next 读取 $PORT。
+"$schema" = "https://railway.com/railway.schema.json"
+
+[build]
+builder = "RAILPACK"
+watchPatterns = ["office-vision-dashboard/**"]
+
+[deploy]
+startCommand = "npm run start"
+restartPolicyType = "ALWAYS"
