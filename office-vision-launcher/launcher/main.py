@@ -12,7 +12,7 @@ def main() -> None:
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("OfficeVision.Tray")
 
-    from .config import app_base_dir, load_config
+    from .config import app_base_dir, app_support_dir, load_config
     from .services import ServiceManager
     from .tray import TrayApp
 
@@ -23,6 +23,11 @@ def main() -> None:
         sys.exit(1)
 
     log_dir = app_base_dir() / "data" / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # 部署目录不可写（如直接从 DMG 卷内运行）时回退到用户配置目录
+        log_dir = app_support_dir() / "data" / "logs"
 
     manager = ServiceManager(
         config.services, config.restart_delay_seconds, log_dir, server_url=config.server_url

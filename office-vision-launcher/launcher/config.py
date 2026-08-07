@@ -84,7 +84,7 @@ def _candidate_dirs() -> list[Path]:
     return dirs
 
 
-def _app_support_dir() -> Path:
+def app_support_dir() -> Path:
     """用户级配置目录（部署目录不可写时的兜底，如直接从 DMG 卷内运行）。"""
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
@@ -96,7 +96,7 @@ def _app_support_dir() -> Path:
 def _create_default_config() -> Path:
     """生成默认 config.yaml：优先部署目录（倒序尝试，避开 .app 内部），
     全部不可写（如只读 DMG 卷）则落到用户配置目录。"""
-    candidates = [*reversed(_candidate_dirs()), _app_support_dir()]
+    candidates = [*reversed(_candidate_dirs()), app_support_dir()]
     last_error: Exception | None = None
     for base in candidates:
         path = base / "config.yaml"
