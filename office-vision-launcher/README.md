@@ -85,8 +85,8 @@ build/
 ```bash
 # 1. 修改 __version__ 并提交
 # 2. 打 tag 触发（tag 必须与 __version__ 一致，CI 会校验）
-git tag v0.2.0 && git push origin v0.2.0
-# 或在 Actions 页面手动 Run workflow（按当前 __version__ 发布）
+git tag v0.2.1 && git push origin v0.2.1
+# 注意：发布只走 tag 触发，不用 workflow_dispatch 手动构建
 ```
 
 ### 方式二：本地手动打包（兜底，仅当前平台）

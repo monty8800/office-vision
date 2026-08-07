@@ -13,7 +13,6 @@ import plistlib
 import shutil
 import subprocess
 import sys
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -96,24 +95,50 @@ def make_installer() -> Path:
 
 
 def make_dmg() -> Path:
-    """人工安装包：hdiutil 生成 DMG（macOS 原生工具，CI runner 自带）。"""
+    """人工安装包：hdiutil 生成 DMG（macOS 原生工具，CI runner 自带）。
+
+    两步法：先建可写 UDRW 镜像并挂载，在卷内拷入 App 与配置、
+    ln -s 出 Applications 替身，再转只读 UDZO。
+    不用 create -srcfolder：部分 hdiutil 版本会静默丢弃源目录里的符号链接。
+    """
     if IS_WINDOWS:
         raise RuntimeError("DMG 仅支持 macOS")
     app_dir = STAGE / f"{APP_NAME}.app"
     dmg = DIST / "OfficeVisionLauncher-macOS.dmg"
-    with tempfile.TemporaryDirectory() as tmp:
-        src = Path(tmp) / "dmg-src"
-        src.mkdir()
-        shutil.copytree(app_dir, src / f"{APP_NAME}.app", symlinks=True)
-        # 放入 Applications 替身：打开 DMG 即呈现经典"拖入应用程序文件夹"画面，
-        # 否则用户双击 App 只是从挂载卷临时运行，不会出现在"应用程序"列表
-        (src / "Applications").symlink_to("/Applications")
+    rw = DIST / "rw.dmg"
+    # 容量预留充足（App 约 100MB），UDZO 压缩后实际体积不受影响；
+    # 注意 -format 不能与 -size 模式共用，UDRW 是默认格式
+    subprocess.run(
+        ["hdiutil", "create", "-size", "300m", "-fs", "HFS+",
+         "-volname", APP_NAME, "-ov", str(rw)],
+        check=True, capture_output=True,
+    )
+    volume: Path | None = None
+    try:
+        result = subprocess.run(
+            ["hdiutil", "attach", "-nobrowse", "-readwrite", str(rw)],
+            check=True, capture_output=True, text=True,
+        )
+        volume = Path(result.stdout.splitlines()[-1].split("\t")[-1])
+        shutil.copytree(app_dir, volume / f"{APP_NAME}.app", symlinks=True)
         # 配置文件随 DMG 分发，用户可将两者一起拷入部署目录；
         # 即使不拷，应用也会自动生成默认配置
-        shutil.copy(STAGE / "config.yaml", src / "config.yaml")
+        shutil.copy(STAGE / "config.yaml", volume / "config.yaml")
+        # Applications 替身：打开 DMG 即呈现经典"拖入应用程序文件夹"画面，
+        # 否则用户双击 App 只是从挂载卷临时运行，不会出现在"应用程序"列表
         subprocess.run(
-            ["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(src),
-             "-ov", "-format", "UDZO", str(dmg)],
+            ["ln", "-s", "/Applications", str(volume / "Applications")],
             check=True, capture_output=True,
         )
+    finally:
+        if volume is not None:
+            subprocess.run(
+                ["hdiutil", "detach", str(volume)], capture_output=True,
+            )
+    subprocess.run(
+        ["hdiutil", "convert", str(rw), "-format", "UDZO",
+         "-o", str(dmg), "-ov"],
+        check=True, capture_output=True,
+    )
+    rw.unlink()
     return dmg
