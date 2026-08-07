@@ -1,0 +1,54 @@
+[project]
+name = "office-vision-agent"
+version = "0.1.0"
+description = "Office Vision AI Agent - 视觉采集与行为识别边缘端（只识别、发事件，不存储业务数据）"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    # 核心
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "loguru>=0.7",
+    "pyyaml>=6.0",
+    # 视觉（阶段5起使用）
+    "opencv-python>=4.10",
+    "numpy>=1.26,<2",
+    "mediapipe>=0.10.14",
+    "ultralytics>=8.3",
+    # 通信（阶段6起使用）
+    "httpx>=0.27",
+    "aiosqlite>=0.20",
+    # Debug Center（仅 debug.enabled=true 时使用）
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "psutil>=6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "black>=24.4",
+    "mypy>=1.10",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["cv2", "mediapipe.*", "ultralytics.*", "yaml", "psutil"]
+ignore_missing_imports = true

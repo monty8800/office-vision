@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# 模型权重（通过脚本下载）
+office-vision-agent/models/
+
+# YOLO 训练数据集与训练产物
+yolo-training/datasets/
+yolo-training/runs/
+yolo-training/*.pt
+
+# 运行时数据
+office-vision-agent/data/
+office-vision-agent/logs/
+office-vision-server/logs/
+*.db
+*.sqlite3
+
+# 前端
+office-vision-dashboard/node_modules/
+office-vision-dashboard/.next/
+office-vision-dashboard/out/
+.env*.local
+
+# 系统
+.DS_Store
+
+# IDE / 本地工具
+.qoder/

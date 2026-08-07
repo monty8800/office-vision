@@ -1,0 +1,13 @@
+line-length = 100
+target-version = "py312"
+src = ["agent", "tests"]
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP", "ANN", "SIM"]
+ignore = ["ANN401"]
+
+[lint.per-file-ignores]
+"tests/**" = ["ANN", "B011"]
+
+[lint.isort]
+known-first-party = ["agent"]

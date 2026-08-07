@@ -1,0 +1,32 @@
+[project]
+name = "yolo-training"
+version = "0.1.0"
+description = "Office Vision 自训练数据集工程：抽烟行为分类 + 香烟目标检测的数据采集、标注、训练"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ultralytics>=8.3",   # YOLO11 训练与验证
+    "opencv-python>=4.10",
+    "numpy>=1.26,<2",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5",
+    "black>=24.4",
+    "mypy>=1.10",
+]
+
+[tool.uv]
+package = false
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["cv2", "ultralytics.*"]
+ignore_missing_imports = true

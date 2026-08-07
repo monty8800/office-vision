@@ -1,0 +1,25 @@
+# Smoking Detector 插件
+# 抽烟行为检测：夹烟手势（食指近嘴 + 指尖聚拢）+ 往返运动模式 + 状态机去重
+
+# --- 单帧命中条件（三者须同时满足）---
+mouth_region_expand: 1.4     # 嘴部区域外扩倍数（食指指尖 / 手腕须落入其中）
+grip_distance_ratio: 0.6     # 拇指-食指指尖距离 < 嘴部尺寸×该比例 视为夹持手势
+
+# --- 会话级确认条件（排除"手一直放嘴上"的静态姿势）---
+min_hits_to_start: 8         # 累计命中帧数达标
+min_suspect_seconds: 3.0     # 命中持续时长达标（秒）
+min_round_trips: 1           # 窗口内"举起→放下"往返次数达标（真实抽烟的重复动作）
+round_trip_window_seconds: 15.0  # 往返统计的时间窗口（秒）
+lift_fraction: 0.25          # 手腕抬升幅度阈值（相对窗口内最大振幅的比例）
+
+# --- 会话收尾 ---
+max_misses_suspect: 8        # Suspect 状态允许的最大连续丢失帧数
+no_detection_timeout: 30.0   # Smoking 中超过该秒数无检测则结束（秒）
+min_duration: 5.0            # 低于该时长的会话视为误报，丢弃（秒）
+
+# --- 香烟检出强证据（自训练 cigarette 检测模型，加速确认）---
+# 近 cigarette_memory_seconds 内检出过香烟时，命中数/时长阈值降为以下宽松值；
+# 无检出时维持上方严格条件（往返运动要求不变）
+cigarette_min_hits_to_start: 3     # 有香烟证据时的累计命中帧数阈值
+cigarette_min_suspect_seconds: 1.0 # 有香烟证据时的持续时长阈值（秒）
+cigarette_memory_seconds: 3.0      # 香烟检出后多久内视为有效证据（秒）

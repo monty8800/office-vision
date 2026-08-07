@@ -1,0 +1,27 @@
+# Office Vision Server 配置
+# 阶段7（配置系统）完善校验；当前为骨架占位。
+
+server:
+  name: "office-vision-server"
+  host: "0.0.0.0"
+  port: 8000
+  log_level: "INFO"
+
+database:
+  # 开发默认 SQLite（零依赖）；生产切 PostgreSQL：
+  # postgresql+asyncpg://postgres:postgres@localhost:5432/office_vision
+  # 亦可用环境变量 OVA_DATABASE_URL 覆盖
+  url: "sqlite+aiosqlite:///data/office_vision.db"
+
+events:
+  dedup_window_seconds: 5        # 同事件去重窗口（网络重试场景）
+
+automation:
+  enabled: false                 # 阶段后续：Home Assistant 联动
+  home_assistant:
+    url: "http://localhost:8123"
+    token: ""                    # 建议改用环境变量 OVA_HA_TOKEN
+
+users:
+  # MVP 单用户；后续版本引入鉴权
+  default_user: "admin"

@@ -1,0 +1,60 @@
+# Office Vision Agent 配置
+# 所有配置必须来自本文件，禁止硬编码（第四原则）。
+
+agent:
+  name: "office-vision-agent"
+  device_id: "mac-main"          # 设备标识，Server 用于区分多 Agent
+  log_level: "INFO"
+
+camera:
+  type: "uvc"                    # uvc | rtsp | rpicam | esp32（硬件抽象，第五原则）
+  index: 0
+  width: 1280
+  height: 720
+  fps: 30
+  warmup_frames: 10              # 预热帧数（等待自动曝光稳定）
+
+detector:
+  type: "yolo"                   # yolo | coreml | tensorrt | openvino | tflite（AI 可替换，第三原则）
+  weights: "models/yolo11n.pt"
+  confidence: 0.45
+  person_only: true              # 人形过滤（不影响香烟第二模型）
+  # 自训练香烟检测（yolo-training 项目产出）；权重缺失时自动降级为仅人形检测
+  cigarette_weights: "../yolo-training/runs/detect/cigarette/weights/best.pt"
+  cigarette_confidence: 0.25     # 香烟是小目标，阈值低于人形检测
+
+pose:
+  type: "mediapipe"              # 姿态特征提取器（可替换）
+  face_model: "models/face_landmarker.task"
+  hand_model: "models/hand_landmarker.task"
+  num_hands: 2
+
+pipeline:
+  process_fps: 10                # 在岗时的完整管线频率
+  sleep_fps: 0.5                 # 休眠时的轻量唤醒探测频率
+
+presence:
+  enabled: true
+  sleep_after_seconds: 300       # 离岗多久后自动休眠（5分钟）
+  resume_wait_seconds: 3         # 恢复等待
+
+server:
+  url: "http://localhost:8000"
+  push_interval_seconds: 5       # 事件批量上报间隔
+  offline_cache: "data/event_cache.db"   # Server 不可用时本地缓存
+
+plugins:
+  dir: "plugins"                 # 行为检测插件目录
+
+# Debug Center（开发调试中心）：仅开发模式启用，发布版 enabled=false
+debug:
+  enabled: true
+  overlay: true                  # 摄像头画面 Overlay（Face/Hand/Mouth/BBox/Distance）
+  performance: true              # CPU / Memory / FPS / Inference / Latency
+  timeline: true                 # Event 实时流
+  replay: true                   # 事件前后各 10s 回放片段
+  replay_before_seconds: 10
+  replay_after_seconds: 10
+  save_snapshot: true            # 一键截图（图片 + Overlay + 状态）
+  frame_buffer_seconds: 30       # 帧环形缓冲时长（供 Replay 取前段）
+  port: 8100                     # Agent 内置 debug HTTP 服务端口
