@@ -2,12 +2,30 @@
 
 Agent 端的托盘小应用，替代 `scripts/service.sh`，macOS / Windows 通用：
 
-- 状态栏/托盘图标实时反映 Agent 运行状态（绿=运行中，灰=已停止，红=启动失败，蓝=升级中）
+- 状态栏/托盘图标实时反映 Agent 运行状态（绿=运行中，灰=已停止，红=启动失败，蓝=升级/部署中）
 - 菜单一键启动/停止 Agent，崩溃自动重启（连续快速崩溃 5 次后熔断）
+- 新设备首次启动自动部署环境（安装 uv/克隆仓库/装依赖/下模型，macOS 与 Windows 双平台）
 - 一键打开远程 Dashboard（Server 与 Dashboard 部署在服务器上）
 - 在线升级：从 GitHub Releases 检查新版本，下载对应平台资产，自替换后重启
 
 > 部署形态：本应用只运行在监控点电脑（Agent 端）；Server 与 Dashboard 在远程服务器。
+
+## 新设备部署（自动安装）
+
+新监控点无需手动装环境，只需三步：
+
+1. 从 GitHub Releases 下载安装包（macOS 用 DMG / Windows 用 exe），新建一个专用文件夹，
+   把应用与 `config.yaml` 都放进去（⚠️ 不要在 DMG 卷内直接运行）
+2. 编辑 `config.yaml`：填 `github_token`（私有仓库克隆必需，只读权限即可）、
+   `server_url` 指向服务器（如 `http://192.168.x.x:8000`）
+3. 启动应用：检测到环境缺失后自动完成 安装 uv → 克隆仓库 → 装依赖 → 下载模型，
+   托盘图标变蓝并实时展示当前步骤，完成后自动拉起 Agent；失败时菜单显示原因，点击可重试
+
+目录约定：仓库会克隆到托盘文件夹的上级（与 `office-vision-agent` 平级），
+与 `config.yaml` 的 `workdir: "../office-vision-agent"` 相对路径保持一致。
+
+> macOS 首次启动需 `xattr -cr` 或右键打开解除 Gatekeeper，并在系统设置授权摄像头；
+> 授权对已启动进程不生效，若授权前 Agent 已启动过一次，点击菜单重启即可。
 
 ## 开发模式运行
 
