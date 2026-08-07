@@ -4,8 +4,12 @@
 #   office-vision-tray-windows.zip     自更新资产（exe + config.yaml）
 #   OfficeVisionLauncher-Windows.exe   便携版单文件
 # 注：Setup.exe（Inno Setup）为后续迭代，见 README 路线图。
+# 注：CI 的 Windows 控制台为 cp1252 编码，Python 输出禁止使用中文（UnicodeEncodeError）。
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
 uv sync --group dev
-uv run --group dev python -c "from build.packlib import make_exe, make_zip, pyinstaller_build; pyinstaller_build(); print('自更新资产:', make_zip()); print('便携版:', make_exe())"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+uv run --group dev python -c "from build.packlib import make_exe, make_zip, pyinstaller_build; pyinstaller_build(); print('zip asset:', make_zip()); print('portable exe:', make_exe())"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
