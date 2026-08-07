@@ -8,6 +8,7 @@ RFC-0008：build/ 目录负责平台打包，GitHub Actions 仅调用对应脚�
 
 from __future__ import annotations
 
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,26 @@ STAGE = DIST / "stage"  # PyInstaller 输出暂存区
 APP_NAME = "Office Vision Tray"
 IS_WINDOWS = sys.platform == "win32"
 OS_NAME = "windows" if IS_WINDOWS else "darwin"
+
+
+def _patch_macos_plist() -> None:
+    """补全 Info.plist：规范 Bundle ID（TCC 权限注册必需，否则应用不出现在
+    摄像头授权列表）+ 摄像头用途说明（缺失时系统直接拒绝弹窗）。"""
+    app = STAGE / f"{APP_NAME}.app"
+    plist_path = app / "Contents" / "Info.plist"
+    with plist_path.open("rb") as fh:
+        plist = plistlib.load(fh)
+    plist["CFBundleIdentifier"] = "com.monty8800.office-vision-tray"
+    plist["NSCameraUsageDescription"] = "需要摄像头画面用于办公行为分析（在岗检测、抽烟检测等）"
+    with plist_path.open("wb") as fh:
+        plistlib.dump(plist, fh)
+    # 清理扩展属性（否则 codesign 报 resource fork detritus），
+    # 修改 plist 也会使原 ad-hoc 签名失效，需重新签名
+    subprocess.run(["xattr", "-cr", str(app)], check=True, capture_output=True)
+    subprocess.run(
+        ["codesign", "--force", "--deep", "-s", "-", str(app)],
+        check=True, capture_output=True,
+    )
 
 
 def pyinstaller_build() -> None:
@@ -44,6 +65,7 @@ def pyinstaller_build() -> None:
     if not IS_WINDOWS:
         # --windowed 会同时残留 onedir 目录，仅保留 .app bundle
         shutil.rmtree(STAGE / APP_NAME, ignore_errors=True)
+        _patch_macos_plist()
     # 配置随产物分发：用户按部署环境修改服务器地址/Token；升级时 updater 不覆盖已有配置
     shutil.copy(ROOT / "config.yaml", STAGE / "config.yaml")
 

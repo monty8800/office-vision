@@ -9,7 +9,7 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['/Users/monty/Documents/Dev/office-vision/office-vision-launcher/__main__.py'],
+    ['__main__.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
