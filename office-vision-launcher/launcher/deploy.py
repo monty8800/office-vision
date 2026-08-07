@@ -98,13 +98,15 @@ def _git(root: Path, *args: str) -> None:
     _run(["git", "-C", str(root), *args])
 
 
-_SPARSE_PATH = "office-vision-agent"
+# 只检出 Agent 运行所需目录：agent 本体 + 自训练香烟检测权重
+# （agent.yaml 的 cigarette_weights 指向 ../yolo-training/weights/，缺失会降级为仅人形检测）
+_SPARSE_PATHS = ("office-vision-agent", "yolo-training/weights")
 
 
 def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
     """把仓库检出到 repo_root（可能已存在托盘目录，故用 init+fetch 而非 clone）。
 
-    sparse-checkout 只检出 office-vision-agent：对已全量检出的旧部署，
+    sparse-checkout 只检出 Agent 所需目录：对已全量检出的旧部署，
     重新应用规则 + checkout 会自动清掉其余子项目目录。
     """
     url = build_clone_url(repo, token)
@@ -114,7 +116,7 @@ def _clone_repo(repo: str, token: str, repo_root: Path) -> None:
             _git(repo_root, "remote", "add", "origin", url)
         else:
             _git(repo_root, "remote", "set-url", "origin", url)
-        _git(repo_root, "sparse-checkout", "set", "--cone", _SPARSE_PATH)
+        _git(repo_root, "sparse-checkout", "set", "--cone", *_SPARSE_PATHS)
         _git(repo_root, "fetch", "--depth", "1", "origin", "HEAD")
         _git(repo_root, "checkout", "-f", "FETCH_HEAD")
     except FileNotFoundError:
