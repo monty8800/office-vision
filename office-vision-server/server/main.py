@@ -20,6 +20,7 @@ from server.api.routes import events as event_routes
 from server.api.routes import stats as stats_routes
 from server.core.config import ServerConfig, load_config
 from server.core.logging import setup_logging
+from server.database.migrate import migrate_smoking_to_behavior
 from server.database.session import Database
 
 
@@ -31,6 +32,8 @@ def create_app(database_url: str, config: ServerConfig | None = None) -> FastAPI
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         db = Database(database_url)
         await db.create_all()
+        async with db.session_scope() as session:  # 旧抽烟表一次性迁移（幂等）
+            await migrate_smoking_to_behavior(session)
         app.state.db = db
         app.state.config = settings
         logger.info("Server 已启动（数据库就绪）")

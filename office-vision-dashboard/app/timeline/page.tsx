@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { eventLabel, formatTime, serverApi, type EventLogItem } from "@/lib/server-api";
+import {
+  eventLabel,
+  formatTime,
+  NOISE_EVENT_TYPES,
+  serverApi,
+  type EventLogItem,
+} from "@/lib/server-api";
 import { Badge, Card, EmptyState } from "@/components/ui";
 
 function eventTone(type: string): "green" | "amber" | "red" | "zinc" | "blue" {
@@ -21,7 +27,8 @@ export default function TimelinePage() {
       try {
         const result = await serverApi.events(200);
         if (active) {
-          setEvents(result.events);
+          // 心跳等周期性事件不进时间轴（避免淹没业务事件）
+          setEvents(result.events.filter((e) => !NOISE_EVENT_TYPES.has(e.event_type)));
           setError(null);
         }
       } catch (e) {

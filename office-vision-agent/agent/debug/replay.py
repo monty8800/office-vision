@@ -1,8 +1,10 @@
 """Event Replay：事件触发自动保存 前10s + 过程 + 后10s 回放片段。
 
+为节省磁盘不录制视频，改为按固定间隔抽帧保存 JPEG 截图。
+
 产物（data/debug/replays/<event_id>/）：
-    replay.mp4    回放视频（Dashboard 点击播放）
-    meta.json     事件信息 + 时间窗 + 帧数
+    frames/*.jpg  回放截图（Dashboard 点击浏览）
+    meta.json     事件信息 + 时间窗 + 帧数 + 截图清单
 
 排查误判、数据集制作、AI 优化均可直接消费本目录。
 """
@@ -35,14 +37,14 @@ class ReplayRecorder:
         before_seconds: float = 10.0,
         after_seconds: float = 10.0,
         trigger_events: frozenset[str] = DEFAULT_TRIGGER_EVENTS,
-        fps: int = 5,
+        snapshot_interval: float = 1.0,
     ) -> None:
         self._buffer = buffer
         self._out_dir = out_dir
         self._before = before_seconds
         self._after = after_seconds
         self._triggers = trigger_events
-        self._fps = fps
+        self._interval = max(snapshot_interval, 0.1)
 
     async def on_event(self, event: Event) -> None:
         if event.event_type not in self._triggers:
@@ -62,15 +64,22 @@ class ReplayRecorder:
 
     def _save(self, event: Event, frames: Sequence[Frame], start: float, end: float) -> None:
         target = self._out_dir / event.event_id
-        target.mkdir(parents=True, exist_ok=True)
-        first = frames[0]
-        height, width = first.image.shape[:2]
-        writer = cv2.VideoWriter(
-            str(target / "replay.mp4"), cv2.VideoWriter.fourcc(*"mp4v"), self._fps, (width, height)
-        )
+        frames_dir = target / "frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+        # 按间隔抽帧保存 JPEG，首帧必留
+        names: list[str] = []
+        last_saved = float("-inf")
         for item in frames:
-            writer.write(item.image)
-        writer.release()
+            if item.timestamp - last_saved < self._interval:
+                continue
+            name = f"{len(names):04d}.jpg"
+            ok, encoded = cv2.imencode(".jpg", item.image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            if not ok:
+                logger.warning("Replay 截图编码失败: {} @ {:.2f}", event.event_id, item.timestamp)
+                continue
+            (frames_dir / name).write_bytes(encoded.tobytes())
+            names.append(name)
+            last_saved = item.timestamp
 
         meta = {
             "event_id": event.event_id,
@@ -79,12 +88,14 @@ class ReplayRecorder:
             "occurred_at": event.occurred_at.isoformat(),
             "window": {"start": start, "end": end},
             "frame_count": len(frames),
+            "snapshot_interval": self._interval,
+            "snapshots": names,
             "payload": event.payload(),
         }
         (target / "meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        logger.info("Replay 已保存: {} ({} 帧)", event.event_id, len(frames))
+        logger.info("Replay 已保存: {} ({} 张截图)", event.event_id, len(names))
 
     def list_replays(self) -> list[dict[str, object]]:
         """列出全部回放（按时间倒序）。"""
@@ -99,6 +110,9 @@ class ReplayRecorder:
         replays.sort(key=lambda r: str(r.get("occurred_at", "")), reverse=True)
         return replays
 
-    def video_path(self, event_id: str) -> Path | None:
-        path = self._out_dir / event_id / "replay.mp4"
-        return path if path.exists() else None
+    def snapshot_path(self, event_id: str, name: str) -> Path | None:
+        """返回指定回放截图路径；文件名必须存在于该回放的 frames 目录。"""
+        path = self._out_dir / event_id / "frames" / name
+        if path.parent.parent != (self._out_dir / event_id) or not path.is_file():
+            return None
+        return path

@@ -19,6 +19,9 @@ yolo-training/*.pt
 office-vision-agent/data/
 office-vision-agent/logs/
 office-vision-server/logs/
+office-vision-launcher/data/
+office-vision-launcher/dist/
+office-vision-launcher/build/
 *.db
 *.sqlite3
 

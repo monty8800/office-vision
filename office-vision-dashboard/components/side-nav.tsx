@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
   { href: "/", label: "概览", icon: "◉" },
-  { href: "/trends", label: "趋势", icon: "▤" },
+  { href: "/trends", label: "行为分析", icon: "▤" },
   { href: "/timeline", label: "事件时间轴", icon: "≣" },
   { href: "/status", label: "系统状态", icon: "⚙" },
   { href: "/monitor", label: "实时监控", icon: "⌖" },

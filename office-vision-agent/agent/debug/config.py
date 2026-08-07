@@ -18,6 +18,7 @@ class DebugSettings:
     save_snapshot: bool = True
     replay_before_seconds: float = 10.0
     replay_after_seconds: float = 10.0
+    replay_snapshot_interval: float = 1.0
     frame_buffer_seconds: float = 30.0
     port: int = 8100
     data_dir: str = "data/debug"

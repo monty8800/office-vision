@@ -28,7 +28,14 @@ from agent.debug.frame_buffer import FrameBuffer
 from agent.debug.perf import PerfCollector
 from agent.debug.replay import ReplayRecorder
 from agent.events.bus import EventBus
-from agent.events.types import Event, PresenceResumed, PresenceSleeping, SeatEmpty, SeatOccupied
+from agent.events.types import (
+    AgentAlive,
+    Event,
+    PresenceResumed,
+    PresenceSleeping,
+    SeatEmpty,
+    SeatOccupied,
+)
 from agent.vision.frame import VisionContext
 
 _TIMELINE_LIMIT = 500
@@ -49,6 +56,7 @@ class DebugHub:
             Path(settings.data_dir) / "replays",
             before_seconds=settings.replay_before_seconds,
             after_seconds=settings.replay_after_seconds,
+            snapshot_interval=settings.replay_snapshot_interval,
         )
         self._timeline: deque[dict[str, Any]] = deque(maxlen=_TIMELINE_LIMIT)
         self._labels_path = Path(settings.data_dir) / "labels.jsonl"
@@ -94,6 +102,8 @@ class DebugHub:
     # ---- 事件订阅（全部调试数据的来源） ----
 
     async def _on_event(self, event: Event) -> None:
+        if isinstance(event, AgentAlive):
+            return  # 心跳仅用于 Server 在线判定，不进调试时间轴/状态派生
         self._latest_event_text = f"{event.event_type} @ {event.occurred_at:%H:%M:%S}"
         self._timeline.append(
             {

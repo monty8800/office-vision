@@ -13,7 +13,10 @@
 
 香烟检出（cigarette 目标检测）作为独立确认通道（主通道）：
 - cigarette_confirm_window_seconds 窗口内检出达 cigarette_confirm_frames 次即确认抽烟，
-  不依赖手势判据（实际画面中 MediaPipe 手势常因角度/遮挡无法达标，手势不应阻断强证据）
+  不依赖完整手势判据（实际画面中 MediaPipe 手势常因角度/遮挡无法达标，手势不应阻断强证据）
+- 但独立通道需最低手势佐证（窗口内至少 cigarette_min_gesture_frames 帧食指近嘴）：
+  香烟模型会把笔/手表/耳朵鼻子误检为香烟且持续高置信度，真实抽烟必然伴随
+  手靠近嘴部，完全无手势证据的持续检出一律视为误检
 - 手势命中仍为无香烟检出时的降级通道，维持严格阈值
 
 状态机:
@@ -57,6 +60,7 @@ class SmokingConfig:
     cigarette_min_hits_to_start: int = 3  # 有香烟证据时手势通道的放宽阈值
     cigarette_min_suspect_seconds: float = 1.0
     cigarette_memory_seconds: float = 3.0  # 检出后多久内视为有效证据
+    cigarette_min_gesture_frames: int = 1  # 独立通道所需的最少食指近嘴帧数（防误检）
 
 
 class SmokingState(StrEnum):
@@ -136,6 +140,8 @@ class SmokingSessionMachine:
         self._last_cigarette_seen: float | None = None  # 最近一次检出香烟的时刻
         # 香烟独立通道：滚动窗口内的检出时刻序列
         self._cig_times: list[float] = []
+        # 手势佐证：窗口内食指近嘴的时刻序列（独立通道防误检用）
+        self._gesture_times: list[float] = []
 
     @property
     def state(self) -> SmokingState:
@@ -162,6 +168,7 @@ class SmokingSessionMachine:
                 else None
             ),
             "cigarette_hits_recent": len(self._cig_times),
+            "gesture_frames_recent": len(self._gesture_times),
         }
 
     def reset(self) -> None:
@@ -175,6 +182,7 @@ class SmokingSessionMachine:
         self._round_trips = 0
         self._last_cigarette_seen = None
         self._cig_times = []
+        self._gesture_times = []
 
     def update(
         self, signal: SmokingSignal, timestamp: float, cigarette_visible: bool = False
@@ -186,6 +194,10 @@ class SmokingSessionMachine:
         window = self._config.cigarette_confirm_window_seconds
         while self._cig_times and timestamp - self._cig_times[0] > window:
             self._cig_times.pop(0)
+        if signal.index_near:
+            self._gesture_times.append(timestamp)
+        while self._gesture_times and timestamp - self._gesture_times[0] > window:
+            self._gesture_times.pop(0)
 
         # 超时收尾：手势与香烟均无证据才算沉寂（即使本帧命中也先判断，保证时间轴严格）
         cig_active = (
@@ -200,12 +212,13 @@ class SmokingSessionMachine:
             if ended is not None:
                 events.append(ended)
 
-        # 香烟独立通道：窗口内检出达标即确认（不依赖手势）
+        # 香烟独立通道：窗口内检出达标 + 最低手势佐证（防笔/手表/五官误检）
         if (
             cigarette_visible
             and self._state is not SmokingState.SMOKING
             and len(self._cig_times) >= self._config.cigarette_confirm_frames
             and timestamp - self._cig_times[0] >= self._config.cigarette_min_seconds
+            and len(self._gesture_times) >= self._config.cigarette_min_gesture_frames
         ):
             self._state = SmokingState.SMOKING
             if self._session_start <= 0.0:

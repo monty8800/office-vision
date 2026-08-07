@@ -26,6 +26,7 @@ from agent.debug.hub import DebugHub
 from agent.events.bus import EventBus
 from agent.plugins.manager import PluginManager
 from agent.presence.manager import PresenceManager
+from agent.transport.heartbeat import HeartbeatTask
 from agent.transport.http_publisher import HttpPublisher
 from agent.transport.offline_store import OfflineStore
 from agent.transport.pusher import EventPusher
@@ -93,6 +94,9 @@ async def _run(config: AgentConfig) -> None:
         bus,
         push_interval_seconds=config.server.push_interval_seconds,
     )
+    heartbeat = HeartbeatTask(
+        bus, config.agent.device_id, config.server.heartbeat_interval_seconds
+    )
 
     # ---- 启动（监控服务先于摄像头：便于诊断硬件/权限问题） ----
     await pusher.start()
@@ -104,6 +108,7 @@ async def _run(config: AgentConfig) -> None:
 
     tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(pusher.run(), name="pusher"),
+        asyncio.create_task(heartbeat.run(), name="heartbeat"),  # 摄像头失败也保持心跳
     ]
     if debug_hub:
         tasks.append(asyncio.create_task(_serve_debug(debug_hub), name="debug-http"))

@@ -168,17 +168,41 @@ class TestStateMachine:
 
 
 class TestCigaretteFusion:
-    """香烟检出融合：独立通道窗口内达标直接确认；手势通道有证据时放宽阈值。"""
+    """香烟检出融合：独立通道窗口内达标 + 最低手势佐证即确认；手势通道有证据时放宽阈值。"""
 
-    def test_窗口内检出达标_无手势也确认(self) -> None:
+    def test_窗口内检出达标_有手势佐证_确认(self) -> None:
         machine = _make_machine()
         events: list[object] = []
-        for i in range(3):  # 3 次检出跨 1s，手势信号全程为 false
+        for i in range(3):  # 3 次检出跨 1s，食指近嘴仅一帧（最低佐证）
+            signal = SmokingSignal(hit=False, index_near=(i == 1))
+            events.extend(machine.update(signal, BASE + i * 0.5, cigarette_visible=True))
+        assert [type(e) for e in events] == [SmokingStarted]
+        assert machine.state is SmokingState.SMOKING
+
+    def test_持续检出但无手势佐证_不确认(self) -> None:
+        """笔/手表/五官误检场景：香烟持续高置信度检出但手不在嘴旁 → 阻断。"""
+        machine = _make_machine()
+        events: list[object] = []
+        for i in range(20):  # 远超确认门槛的持续检出，手势全程无佐证
             events.extend(
                 machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cigarette_visible=True)
             )
-        assert [type(e) for e in events] == [SmokingStarted]
-        assert machine.state is SmokingState.SMOKING
+        assert events == []
+        assert machine.state is SmokingState.IDLE
+
+    def test_手势佐证超出窗口_不计入(self) -> None:
+        machine = _make_machine(cigarette_confirm_window_seconds=3.0)
+        # 早期一帧食指近嘴，间隔 5s 后才持续检出 → 佐证已过期，不确认
+        machine.update(SmokingSignal(hit=False, index_near=True), BASE)
+        events: list[object] = []
+        for i in range(3):
+            events.extend(
+                machine.update(
+                    SmokingSignal(hit=False), BASE + 5.0 + i * 0.5, cigarette_visible=True
+                )
+            )
+        assert events == []
+        assert machine.state is SmokingState.IDLE
 
     def test_检出次数不足_不确认(self) -> None:
         machine = _make_machine()
@@ -193,12 +217,11 @@ class TestCigaretteFusion:
     def test_帧间闪烁_窗口内计数不中断(self) -> None:
         machine = _make_machine(cigarette_confirm_window_seconds=3.0)
         events: list[object] = []
-        # 检出-漏检-检出-检出，漏检不清空窗口计数
+        # 检出-漏检-检出-检出，漏检不清空窗口计数；首帧提供手势佐证
         seq = [True, False, True, True]
         for i, visible in enumerate(seq):
-            events.extend(
-                machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cigarette_visible=visible)
-            )
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(machine.update(signal, BASE + i * 0.5, cigarette_visible=visible))
         assert [type(e) for e in events] == [SmokingStarted]
 
     def test_检出间隔超出窗口_重新计数(self) -> None:
@@ -223,7 +246,8 @@ class TestCigaretteFusion:
     def test_香烟确认后续_香烟证据延续会话(self) -> None:
         machine = _make_machine(no_detection_timeout=10.0)
         for i in range(3):
-            machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cigarette_visible=True)
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            machine.update(signal, BASE + i * 0.5, cigarette_visible=True)
         assert machine.state is SmokingState.SMOKING
         # 手势全程无命中，但香烟持续检出 → 超时收尾不触发
         events = machine.update(SmokingSignal(hit=False), BASE + 20.0, cigarette_visible=True)

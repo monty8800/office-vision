@@ -23,3 +23,4 @@ min_duration: 5.0            # 低于该时长的会话视为误报，丢弃（�
 cigarette_min_hits_to_start: 3     # 有香烟证据时的累计命中帧数阈值
 cigarette_min_suspect_seconds: 1.0 # 有香烟证据时的持续时长阈值（秒）
 cigarette_memory_seconds: 3.0      # 香烟检出后多久内视为有效证据（秒）
+cigarette_min_gesture_frames: 1    # 独立通道确认前窗口内至少几帧食指近嘴（防笔/手表/五官误检）

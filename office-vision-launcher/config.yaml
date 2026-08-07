@@ -1,0 +1,24 @@
+# Office Vision Agent 托盘应用配置
+# 遵循项目第四原则：配置集中于此，禁止硬编码。
+# 部署形态：本应用只运行在 Agent 端（监控点电脑），Server 与 Dashboard 在远程服务器。
+
+# 在线升级：从 GitHub Releases 下载新版本资产（可用环境变量覆盖）
+github_repo: "monty8800/office-vision"
+# 私有仓库需 Token（建议用环境变量 OVA_GITHUB_TOKEN，不要明文写入本文件）
+github_token: ""
+# 资产名模板：{os}=darwin|windows，两平台均为 zip（内含应用本体 + config.yaml）
+asset_pattern: "office-vision-tray-{os}.zip"
+
+# 受管服务：仅本地 Agent（Server/Dashboard 运行在远程服务器）
+services:
+  - name: agent
+    label: "Agent"
+    port: 8100
+    workdir: "../office-vision-agent"
+    command: ["uv", "run", "python", "-m", "agent.main"]
+
+# 崩溃自动重启
+restart_delay_seconds: 3
+
+# 远程 Dashboard 地址（托盘菜单一键打开，指向部署 Server 的服务器）
+dashboard_url: "http://localhost:3000"

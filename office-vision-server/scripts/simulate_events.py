@@ -10,10 +10,13 @@ import argparse
 import json
 import urllib.request
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from typing import Any
 
 
-def make_event(event_type: str, occurred_at: datetime, payload: dict | None = None) -> dict:
+def make_event(
+    event_type: str, occurred_at: datetime, payload: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {
         "event_id": uuid.uuid4().hex,
         "device_id": "mac-main",
@@ -23,7 +26,7 @@ def make_event(event_type: str, occurred_at: datetime, payload: dict | None = No
     }
 
 
-def smoking_session(start: datetime, duration_seconds: float) -> list[dict]:
+def smoking_session(start: datetime, duration_seconds: float) -> list[dict[str, Any]]:
     end = start + timedelta(seconds=duration_seconds)
     payload = {
         "start_time": start.isoformat(),
@@ -36,16 +39,17 @@ def smoking_session(start: datetime, duration_seconds: float) -> list[dict]:
     ]
 
 
-def build_events(now: datetime) -> list[dict]:
-    events: list[dict] = []
+def build_events(now: datetime) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     # 过去 6 天每天 1~3 次（趋势图）
     for days_ago in range(6, 0, -1):
         day = now - timedelta(days=days_ago)
         for i in range((days_ago % 3) + 1):
             events += smoking_session(day.replace(hour=10 + i * 2, minute=15), 90 + i * 40)
-    # 今天：上午两次
-    events += smoking_session(now.replace(hour=9, minute=40, second=0), 150)
-    events += smoking_session(now.replace(hour=11, minute=5, second=0), 210)
+    # 今天：分散在多个时段（含 19:00 后加班时段，便于时段分布图演示）
+    today_sessions = [(9, 40, 150), (11, 5, 210), (14, 20, 180), (16, 45, 120), (21, 10, 240)]
+    for hour, minute, duration in today_sessions:
+        events += smoking_session(now.replace(hour=hour, minute=minute, second=0), duration)
     # Presence 时间线：上班 → 短暂离开 → 回来
     events.append(make_event("SeatOccupied", now.replace(hour=9, minute=0, second=0)))
     events.append(make_event("SeatEmpty", now - timedelta(minutes=20)))
@@ -59,7 +63,7 @@ def main() -> int:
     parser.add_argument("--url", default="http://localhost:8000")
     args = parser.parse_args()
 
-    events = build_events(datetime.now(UTC))
+    events = build_events(datetime.now().astimezone())  # 本地时间（Server 归一 UTC 入库）
     request = urllib.request.Request(
         f"{args.url}/api/events",
         data=json.dumps({"events": events}).encode(),

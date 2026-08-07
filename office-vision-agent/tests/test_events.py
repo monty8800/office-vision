@@ -9,6 +9,7 @@ import pytest
 from agent.events.bus import EventBus
 from agent.events.types import (
     EVENT_REGISTRY,
+    AgentAlive,
     Event,
     PersonDetected,
     SeatEmpty,
@@ -42,12 +43,13 @@ class TestEventContract:
         assert payload["start_time"] == start.isoformat()
 
     def test_registry_覆盖全部事件类型(self) -> None:
-        assert len(EVENT_REGISTRY) == 8
+        assert len(EVENT_REGISTRY) == 9
         assert "SmokingEnded" in EVENT_REGISTRY
+        assert "AgentAlive" in EVENT_REGISTRY
 
 
 class TestEventRoundTrip:
-    @pytest.mark.parametrize("cls", [PersonDetected, SeatOccupied, SeatEmpty])
+    @pytest.mark.parametrize("cls", [PersonDetected, SeatOccupied, SeatEmpty, AgentAlive])
     def test_普通事件往返(self, cls: type[Event]) -> None:
         original = cls(device_id="dev-1")
         restored = event_from_dict(original.to_dict())

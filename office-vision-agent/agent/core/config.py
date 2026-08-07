@@ -38,6 +38,7 @@ class ServerSection:
     url: str = "http://localhost:8000"
     push_interval_seconds: float = 5.0
     offline_cache: str = "data/event_cache.db"
+    heartbeat_interval_seconds: float = 30.0
 
 
 @dataclass(frozen=True)

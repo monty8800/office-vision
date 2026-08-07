@@ -110,7 +110,7 @@ flowchart TB
     HUB --> A2[GET /debug/stream · MJPEG]
     HUB --> A3[GET /debug/events]
     HUB --> A4[POST /debug/snapshot · overlays · labels]
-    HUB --> A5[GET /debug/replays · mp4 播放]
+    HUB --> A5[GET /debug/replays · 截图浏览]
     NX[Next.js rewrites 代理<br/>/agent-debug/* → :8100] --> A1 & A2 & A3 & A4 & A5
     NX --> UI[/monitor 实时监控页面<br/>实时画面 · 行为状态 + 状态机<br/>事件时间轴 · 性能<br/>插件状态 · 画面标注 · 回放 · 快照/]
 ```
@@ -120,7 +120,7 @@ flowchart TB
 - **只经 EventBus**：行为状态、插件状态、时间轴全部由事件派生
 - **注册机制**：新插件放进 `plugins/` 后，`register_plugins(plugins.names, plugins.debug_infos)` 自动带入监控页，无需改实时监控
 - **可关闭**：`debug.enabled=false` 时不装配 Hub、不启动 :8100 监控服务、不注入钩子
-- **Event Replay**：SmokingStarted/Ended 触发，自动保存事件前 10s + 过程 + 后 10s（帧环形缓冲 30s）
+- **Event Replay**：SmokingStarted/Ended 触发，自动保存事件前 10s + 过程 + 后 10s（帧环形缓冲 30s）；不录视频，按间隔抽帧保存 JPEG 截图以节省磁盘
 - **Label Mode**：接口已预留（`POST /debug/labels`），未来生成训练数据集
 
 ## 五、Server 数据模型

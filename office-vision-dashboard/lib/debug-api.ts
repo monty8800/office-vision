@@ -64,6 +64,8 @@ export interface ReplayMeta {
   device_id: string;
   occurred_at: string;
   frame_count: number;
+  /** 截图模式产物；旧版 mp4 回放无此字段 */
+  snapshots?: string[];
   payload: Record<string, unknown>;
 }
 
@@ -101,5 +103,6 @@ export const debugApi = {
       note,
     }),
   streamUrl: "/agent-debug/stream",
-  replayUrl: (eventId: string) => `/agent-debug/replays/${eventId}.mp4`,
+  replaySnapshotUrl: (eventId: string, name: string) =>
+    `/agent-debug/replays/${eventId}/frames/${name}`,
 };

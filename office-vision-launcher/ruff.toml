@@ -1,0 +1,7 @@
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+# SIM115: subprocess 需要持续持有日志文件句柄，不适用上下文管理器
+ignore = ["ANN", "SIM115"]

@@ -61,23 +61,32 @@ export function OverlayControls({
   );
 }
 
-// ---- Event Replay 列表 + 播放 ----
+// ---- Event Replay 列表 + 截图浏览（不录视频，节省磁盘） ----
 
 export function ReplayPanel({ replays }: { replays: ReplayMeta[] }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedReplay = replays.find((r) => r.event_id === selected) ?? null;
   return (
-    <Card title="事件回放（事件前 10s + 过程 + 后 10s）">
+    <Card title="事件回放（事件前 10s + 过程 + 后 10s · 截图模式）">
       {replays.length === 0 ? (
         <EmptyState text="暂无回放（触发开始抽烟/抽烟结束事件后自动生成）" />
       ) : (
         <div className="space-y-2">
-          {selected ? (
-            <video
-              src={debugApi.replayUrl(selected)}
-              controls
-              autoPlay
-              className="w-full rounded-lg border border-zinc-800"
-            />
+          {selectedReplay ? (
+            selectedReplay.snapshots && selectedReplay.snapshots.length > 0 ? (
+              <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-zinc-800 p-1.5">
+                {selectedReplay.snapshots.map((name) => (
+                  <img
+                    key={name}
+                    src={debugApi.replaySnapshotUrl(selectedReplay.event_id, name)}
+                    alt={`${selectedReplay.event_type} ${name}`}
+                    className="w-full rounded border border-zinc-800/60"
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState text="该回放无截图（旧版视频回放不再支持播放）" />
+            )
           ) : null}
           <ul className="max-h-40 space-y-1.5 overflow-y-auto">
             {replays.map((replay) => (
@@ -93,7 +102,9 @@ export function ReplayPanel({ replays }: { replays: ReplayMeta[] }) {
                 >
                   <span>
                     {eventLabel(replay.event_type)}
-                    <span className="ml-2 text-zinc-500">{replay.frame_count} 帧</span>
+                    <span className="ml-2 text-zinc-500">
+                      {replay.snapshots ? `${replay.snapshots.length} 张截图` : `${replay.frame_count} 帧`}
+                    </span>
                   </span>
                   <span className="tabular-nums text-zinc-500">
                     {new Date(replay.occurred_at).toLocaleTimeString("zh-CN", {

@@ -1,8 +1,8 @@
-"""ORM 模型：事件流水 + 抽烟记录。
+"""ORM 模型：事件流水 + 行为会话。
 
-- EventLog        全部 Agent 事件的原始流水（event_id 唯一，天然幂等）
-- SmokingRecord   抽烟会话记录（一根烟一条，迁移自单体原型）
-- AgentHeartbeat  Agent 在线状态（按 device_id upsert）
+- EventLog         全部 Agent 事件的原始流水（event_id 唯一，天然幂等）
+- BehaviorSession  行为会话记录（一次行为一条，抽烟/喝水/看手机等通用）
+- AgentHeartbeat   Agent 在线状态（按 device_id upsert）
 """
 
 from __future__ import annotations
@@ -29,13 +29,18 @@ class EventLog(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class SmokingRecord(Base):
-    """抽烟会话记录（迁移自原型，新增 device_id 支持多设备）。"""
+class BehaviorSession(Base):
+    """行为会话记录（抽烟/喝水/看手机等通用；由 XxxEnded 事件生成）。"""
 
-    __tablename__ = "smoking_records"
-    __table_args__ = (UniqueConstraint("device_id", "start_time", name="uq_device_start"),)
+    __tablename__ = "behavior_sessions"
+    __table_args__ = (
+        UniqueConstraint(
+            "behavior_type", "device_id", "start_time", name="uq_behavior_device_start"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    behavior_type: Mapped[str] = mapped_column(String(64), index=True)
     device_id: Mapped[str] = mapped_column(String(64), index=True)
     start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))

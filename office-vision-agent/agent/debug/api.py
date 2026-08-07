@@ -10,7 +10,7 @@
     POST /debug/snapshot          一键截图（图片 + Overlay + Event + 状态）
     POST /debug/overlays          修改 Overlay 开关 {face: false, ...}
     GET  /debug/replays           回放列表
-    GET  /debug/replays/{id}.mp4  回放视频播放
+    GET  /debug/replays/{id}/frames/{name}  回放截图浏览（不录视频，节省磁盘）
     POST /debug/labels            Label Mode 接口（预留）
 
 安全说明：仅供本机开发调试使用，无鉴权；发布版 enabled=false 不会启动。
@@ -105,12 +105,12 @@ def create_debug_app(hub: DebugHub) -> FastAPI:
     async def replays() -> dict[str, Any]:
         return {"replays": await asyncio.to_thread(hub.replay.list_replays)}
 
-    @app.get("/debug/replays/{event_id}.mp4")
-    async def replay_video(event_id: str) -> FileResponse:
-        path = await asyncio.to_thread(hub.replay.video_path, event_id)
+    @app.get("/debug/replays/{event_id}/frames/{name}")
+    async def replay_snapshot(event_id: str, name: str) -> FileResponse:
+        path = await asyncio.to_thread(hub.replay.snapshot_path, event_id, name)
         if path is None:
-            raise HTTPException(status_code=404, detail="回放不存在")
-        return FileResponse(path, media_type="video/mp4")
+            raise HTTPException(status_code=404, detail="回放截图不存在")
+        return FileResponse(path, media_type="image/jpeg")
 
     @app.post("/debug/labels")
     async def labels(request: LabelRequest) -> dict[str, Any]:

@@ -83,6 +83,14 @@ class PresenceResumed(Event):
     """人回来，系统从休眠恢复。"""
 
 
+# ---- 系统事件 ----
+
+
+@dataclass(frozen=True)
+class AgentAlive(Event):
+    """周期性心跳：证明 Agent 进程存活（与业务事件无关，避免安静期被误判离线）。"""
+
+
 # ---- 行为事件 ----
 
 
@@ -118,6 +126,7 @@ EVENT_REGISTRY: dict[str, type[Event]] = {
         SeatEmpty,
         PresenceSleeping,
         PresenceResumed,
+        AgentAlive,
         SmokingStarted,
         SmokingEnded,
     )

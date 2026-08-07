@@ -42,6 +42,7 @@ server:
   url: "http://localhost:8000"
   push_interval_seconds: 5       # 事件批量上报间隔
   offline_cache: "data/event_cache.db"   # Server 不可用时本地缓存
+  heartbeat_interval_seconds: 30 # 心跳间隔（需明显小于 Server 的 60s 在线阈值）
 
 plugins:
   dir: "plugins"                 # 行为检测插件目录
@@ -52,9 +53,10 @@ debug:
   overlay: true                  # 摄像头画面 Overlay（Face/Hand/Mouth/BBox/Distance）
   performance: true              # CPU / Memory / FPS / Inference / Latency
   timeline: true                 # Event 实时流
-  replay: true                   # 事件前后各 10s 回放片段
+  replay: true                   # 事件前后各 10s 回放（截图模式，不录视频以节省磁盘）
   replay_before_seconds: 10
   replay_after_seconds: 10
+  replay_snapshot_interval: 1    # 回放截图抽帧间隔（秒）
   save_snapshot: true            # 一键截图（图片 + Overlay + 状态）
   frame_buffer_seconds: 30       # 帧环形缓冲时长（供 Replay 取前段）
   port: 8100                     # Agent 内置 debug HTTP 服务端口

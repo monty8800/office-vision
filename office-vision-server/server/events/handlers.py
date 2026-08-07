@@ -2,7 +2,7 @@
 
 处理链（全部基于 Event，模块间不直接调用）：
 1. EventLog 幂等写入（event_id 唯一）
-2. SmokingEnded → 生成/更新 SmokingRecord（一根烟一条）
+2. 结束类事件（见 ENDED_EVENT_BEHAVIORS）→ 生成 BehaviorSession（一次行为一条）
 3. AgentHeartbeat 心跳刷新
 """
 
@@ -16,8 +16,8 @@ from loguru import logger
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.database.models import AgentHeartbeat, EventLog, SmokingRecord
-from server.events.types import IncomingEvent, to_utc_naive
+from server.database.models import AgentHeartbeat, BehaviorSession, EventLog
+from server.events.types import ENDED_EVENT_BEHAVIORS, IncomingEvent, to_utc_naive
 
 
 class EventHandler:
@@ -27,8 +27,9 @@ class EventHandler:
         """处理单个事件；重复事件返回 False。"""
         if not await self._insert_log(session, event):
             return False
-        if event.event_type == "SmokingEnded":
-            await self._upsert_smoking_record(session, event)
+        behavior = ENDED_EVENT_BEHAVIORS.get(event.event_type)
+        if behavior is not None:
+            await self._upsert_behavior_session(session, event, behavior)
         await self._touch_heartbeat(session, event.device_id)
         return True
 
@@ -51,24 +52,28 @@ class EventHandler:
         )
         return True
 
-    async def _upsert_smoking_record(self, session: AsyncSession, event: IncomingEvent) -> None:
+    async def _upsert_behavior_session(
+        self, session: AsyncSession, event: IncomingEvent, behavior: str
+    ) -> None:
         payload: dict[str, Any] = event.payload
         try:
             start = to_utc_naive(datetime.fromisoformat(str(payload["start_time"])))
             end = to_utc_naive(datetime.fromisoformat(str(payload["end_time"])))
             duration = float(payload["duration_seconds"])
         except (KeyError, ValueError):
-            logger.warning("SmokingEnded payload 不完整: {}", event.event_id)
+            logger.warning("{} payload 不完整: {}", event.event_type, event.event_id)
             return
         record = await session.scalar(
-            select(SmokingRecord).where(
-                SmokingRecord.device_id == event.device_id,
-                SmokingRecord.start_time == start,
+            select(BehaviorSession).where(
+                BehaviorSession.behavior_type == behavior,
+                BehaviorSession.device_id == event.device_id,
+                BehaviorSession.start_time == start,
             )
         )
         if record is None:
             session.add(
-                SmokingRecord(
+                BehaviorSession(
+                    behavior_type=behavior,
                     device_id=event.device_id,
                     start_time=start,
                     end_time=end,

@@ -1,0 +1,93 @@
+name: Tray Release
+
+# RFC-0008：推送 v* tag 或手动触发，matrix 并行跑各平台 runner，
+# 打包逻辑统一在 office-vision-launcher/build/ 目录，本 workflow 只负责调度与发布。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: sh build/macos.sh
+          - os: windows-latest
+            script: pwsh build/windows.ps1
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: office-vision-launcher
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: 调用平台打包脚本
+        run: ${{ matrix.script }}
+
+      - name: 上传产物（安装包 + 自更新资产）
+        uses: actions/upload-artifact@v4
+        with:
+          name: tray-${{ matrix.os }}
+          path: |
+            office-vision-launcher/dist/*.zip
+            office-vision-launcher/dist/*.dmg
+            office-vision-launcher/dist/*.exe
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 汇总各平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 解析版本号与 tag
+        id: meta
+        run: |
+          version=$(python3 - <<'EOF'
+          import pathlib, re
+          text = pathlib.Path("office-vision-launcher/launcher/__init__.py").read_text()
+          print(re.search(r'__version__\s*=\s*"([^"]+)"', text).group(1))
+          EOF
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 校验 tag 与 __version__ 一致（tag 触发时）
+        if: github.event_name == 'push'
+        run: |
+          if [ "${GITHUB_REF_NAME}" != "v${{ steps.meta.outputs.version }}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 __version__ v${{ steps.meta.outputs.version }} 不一致，请先同步版本号"
+            exit 1
+          fi
+
+      - name: 创建 Release 并上传产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${{ steps.meta.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag 已存在，覆盖上传产物"
+            gh release upload "$tag" artifacts/* --clobber
+          else
+            gh release create "$tag" artifacts/* \
+              --title "$tag" \
+              --notes "Office Vision Tray $tag"
+          fi
+          gh release view "$tag"

@@ -142,7 +142,9 @@ class TestHub:
         replays = debug_hub.replay.list_replays()
         assert len(replays) == 1
         assert replays[0]["event_type"] == "SmokingStarted"
-        assert debug_hub.replay.video_path(event.event_id) is not None
+        snapshots = replays[0]["snapshots"]
+        assert isinstance(snapshots, list) and len(snapshots) >= 1
+        assert debug_hub.replay.snapshot_path(event.event_id, snapshots[0]) is not None
 
     def test_label_mode(self, hub: tuple[DebugHub, EventBus]) -> None:
         debug_hub, _ = hub
@@ -177,4 +179,4 @@ class TestApi:
         assert label.status_code == 200
 
         assert client.get("/debug/replays").status_code == 200
-        assert client.get("/debug/replays/nope.mp4").status_code == 404
+        assert client.get("/debug/replays/nope/frames/0000.jpg").status_code == 404

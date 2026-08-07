@@ -60,3 +60,15 @@ class BehaviorEvent(BaseModel):
     """事件业务分发载体（持久化 / 统计 / 自动化共用）。"""
 
     event: IncomingEvent
+
+
+# 「结束类事件 → 行为类型」映射；新行为（喝水/看手机等）只需在此注册一行，
+# 事件 payload 契约不变：start_time / end_time / duration_seconds。
+ENDED_EVENT_BEHAVIORS: dict[str, str] = {
+    "SmokingEnded": "smoking",
+}
+
+# 已知行为类型 → 中文名（Dashboard 注册表兜底）。
+BEHAVIOR_LABELS: dict[str, str] = {
+    "smoking": "抽烟",
+}

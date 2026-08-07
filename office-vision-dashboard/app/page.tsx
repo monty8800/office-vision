@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import {
   formatDuration,
+  formatRelative,
   serverApi,
   type AgentInfo,
+  type BehaviorSummary,
   type PresenceDevice,
-  type SmokingSummary,
 } from "@/lib/server-api";
 import {
   Badge,
@@ -19,7 +20,7 @@ import {
 
 interface OverviewData {
   serverOnline: boolean;
-  today: SmokingSummary | null;
+  today: BehaviorSummary | null;
   agents: AgentInfo[];
   presence: Record<string, PresenceDevice>;
 }
@@ -34,7 +35,7 @@ export default function OverviewPage() {
       try {
         const [health, today, agents, presence] = await Promise.all([
           serverApi.health(),
-          serverApi.smokingToday(),
+          serverApi.behaviorToday("smoking"),
           serverApi.agents(),
           serverApi.presence(),
         ]);
@@ -99,7 +100,15 @@ export default function OverviewPage() {
             )
           }
         />
-        <Stat label="今日抽烟次数" value={data?.today?.count ?? "-"} />
+        <Stat
+          label="今日抽烟次数"
+          value={data?.today?.count ?? "-"}
+          hint={
+            data?.today?.last_start_time
+              ? `距上次 ${formatRelative(data.today.last_start_time)}`
+              : undefined
+          }
+        />
         <Stat
           label="今日总时长"
           value={data?.today ? formatDuration(data.today.total_seconds) : "-"}
