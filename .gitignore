@@ -23,6 +23,10 @@ office-vision-launcher/data/
 office-vision-launcher/dist/
 # 注：office-vision-launcher/build/ 是 RFC-0008 打包脚本目录，需入库；
 # PyInstaller 中间产物已重定向到 dist/work，随 dist/ 一并忽略
+
+# 托盘应用构建产物（本地/CI 产物，不入库）
+deploy-tray/
+
 *.db
 *.sqlite3
 

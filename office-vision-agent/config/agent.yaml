@@ -20,7 +20,7 @@ detector:
   confidence: 0.45
   person_only: true              # 人形过滤（不影响香烟第二模型）
   # 自训练香烟检测（yolo-training 项目产出）；权重缺失时自动降级为仅人形检测
-  cigarette_weights: "../yolo-training/runs/detect/cigarette/weights/best.pt"
+  cigarette_weights: "../yolo-training/weights/cigarette-best.pt"
   cigarette_confidence: 0.25     # 香烟是小目标，阈值低于人形检测
 
 pose:

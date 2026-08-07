@@ -19,7 +19,10 @@ yolo-training/
 │   ├── labelme2yolo.py    # labelme 标注 → YOLO 数据集
 │   ├── train_smoking.py   # 训练行为分类模型（YOLO11-cls）
 │   └── train_cigarette.py # 训练香烟检测模型（YOLO11n）
-└── runs/                  # 训练产物
+├── weights/               # 已入库的训练产出权重
+│   ├── cigarette-best.pt  # 香烟检测模型（mAP50 97.5%）
+│   └── smoking-cls-best.pt# 抽烟行为分类模型
+└── runs/                  # 训练中间产物（不入库，含训练画面可视化）
     ├── classify/smoking/weights/best.pt   # 分类模型
     └── detect/cigarette/weights/best.pt   # 检测模型（mAP50 97.5%）
 ```
@@ -41,8 +44,12 @@ uv run python scripts/train_smoking.py
 
 ## 模型部署
 
-训练完成后，把 `runs/` 下的 `best.pt` 配置到 `office-vision-agent/config/agent.yaml`
-（如 `detector.cigarette_weights`），权重缺失时 Agent 自动降级。
+训练完成后，将 `runs/` 下对应任务的 `best.pt` 复制到 `weights/`（重命名为
+`cigarette-best.pt` / `smoking-cls-best.pt`），并配置到
+`office-vision-agent/config/agent.yaml`（如 `detector.cigarette_weights`），
+权重缺失时 Agent 自动降级。
+
+> 注：`datasets/` 与 `runs/` 含私有训练数据，已在 .gitignore 中排除，仅 `weights/` 入库。
 
 ## 经验备忘
 
