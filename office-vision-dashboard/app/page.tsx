@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   formatDuration,
   formatRelative,
@@ -17,6 +17,7 @@ import {
   presenceTone,
   Stat,
 } from "@/components/ui";
+import { DeviceFilter, useDeviceFilter } from "@/components/device-filter";
 
 interface OverviewData {
   serverOnline: boolean;
@@ -25,7 +26,17 @@ interface OverviewData {
   presence: Record<string, PresenceDevice>;
 }
 
+// useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
 export default function OverviewPage() {
+  return (
+    <Suspense fallback={null}>
+      <OverviewContent />
+    </Suspense>
+  );
+}
+
+function OverviewContent() {
+  const { device } = useDeviceFilter();
   const [data, setData] = useState<OverviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +46,7 @@ export default function OverviewPage() {
       try {
         const [health, today, agents, presence] = await Promise.all([
           serverApi.health(),
-          serverApi.behaviorToday("smoking"),
+          serverApi.behaviorToday("smoking", device),
           serverApi.agents(),
           serverApi.presence(),
         ]);
@@ -65,17 +76,20 @@ export default function OverviewPage() {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [device]);
 
   const presenceEntries = Object.entries(data?.presence ?? {});
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-xl font-bold">概览</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          在岗状态与今日行为统计（每 5 秒刷新）
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold">概览</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            在岗状态与今日行为统计（每 5 秒刷新）
+          </p>
+        </div>
+        <DeviceFilter />
       </header>
 
       {error ? (

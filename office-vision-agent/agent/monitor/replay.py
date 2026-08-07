@@ -2,7 +2,7 @@
 
 为节省磁盘不录制视频，改为按固定间隔抽帧保存 JPEG 截图。
 
-产物（data/debug/replays/<event_id>/）：
+产物（data/monitor/replays/<event_id>/）：
     frames/*.jpg  回放截图（Dashboard 点击浏览）
     meta.json     事件信息 + 时间窗 + 帧数 + 截图清单
 
@@ -19,8 +19,8 @@ from pathlib import Path
 import cv2
 from loguru import logger
 
-from agent.debug.frame_buffer import FrameBuffer
 from agent.events.types import Event
+from agent.monitor.frame_buffer import FrameBuffer
 from agent.vision.frame import Frame
 
 # 默认触发回放的事件类型（后续新插件事件自动支持，只需在此追加或在配置中声明）

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   BEHAVIORS,
   formatDuration,
@@ -12,6 +12,7 @@ import {
   type TrendDay,
 } from "@/lib/server-api";
 import { Card, EmptyState, Stat } from "@/components/ui";
+import { DeviceFilter, useDeviceFilter } from "@/components/device-filter";
 
 interface AnalysisData {
   summary: BehaviorSummary;
@@ -50,7 +51,17 @@ function formatHm(iso: string): string {
   });
 }
 
+// useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
 export default function AnalysisPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnalysisContent />
+    </Suspense>
+  );
+}
+
+function AnalysisContent() {
+  const { device } = useDeviceFilter();
   const [behavior, setBehavior] = useState(BEHAVIORS[0].key);
   const [days, setDays] = useState<7 | 30>(7);
   const [data, setData] = useState<AnalysisData | null>(null);
@@ -63,10 +74,10 @@ export default function AnalysisPage() {
     const load = async () => {
       try {
         const [summary, sessions, trend, hourly] = await Promise.all([
-          serverApi.behaviorToday(behavior),
-          serverApi.behaviorSessions(behavior, 50),
-          serverApi.behaviorTrend(behavior, days),
-          serverApi.behaviorHourly(behavior),
+          serverApi.behaviorToday(behavior, device),
+          serverApi.behaviorSessions(behavior, 50, device),
+          serverApi.behaviorTrend(behavior, days, device),
+          serverApi.behaviorHourly(behavior, device),
         ]);
         if (active) {
           setData({ summary, sessions: sessions.items, trend: trend.days, hourly: hourly.hours });
@@ -82,7 +93,7 @@ export default function AnalysisPage() {
       active = false;
       clearInterval(timer);
     };
-  }, [behavior, days]);
+  }, [behavior, days, device]);
 
   // 节奏派生指标：平均间隔（相邻两次开始时间差的均值）
   const avgInterval = useMemo(() => {
@@ -120,20 +131,23 @@ export default function AnalysisPage() {
           </p>
         </div>
         {/* 行为切换 Tab：注册表新增行为后自动出现 */}
-        <div className="flex gap-1 rounded-lg bg-zinc-800/60 p-1">
-          {BEHAVIORS.map((b) => (
-            <button
-              key={b.key}
-              onClick={() => setBehavior(b.key)}
-              className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                b.key === behavior
-                  ? "bg-zinc-700 text-zinc-100"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              {b.icon} {b.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <DeviceFilter />
+          <div className="flex gap-1 rounded-lg bg-zinc-800/60 p-1">
+            {BEHAVIORS.map((b) => (
+              <button
+                key={b.key}
+                onClick={() => setBehavior(b.key)}
+                className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                  b.key === behavior
+                    ? "bg-zinc-700 text-zinc-100"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                {b.icon} {b.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 

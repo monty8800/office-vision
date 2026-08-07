@@ -1,6 +1,6 @@
 "use client";
 
-import type { DebugEventItem, DebugPerformance, DebugState, LogItem } from "@/lib/debug-api";
+import type { MonitorEventItem, MonitorPerformance, MonitorState, LogItem } from "@/lib/monitor-api";
 import { eventLabel } from "@/lib/server-api";
 import { Badge, Card, EmptyState, PRESENCE_LABELS, presenceTone } from "@/components/ui";
 
@@ -21,12 +21,12 @@ const BEHAVIOR_LABELS: Record<string, string> = {
   smoking: "抽烟中",
 };
 
-function currentStage(behavior: DebugState["behavior"]): string {
+function currentStage(behavior: MonitorState["behavior"]): string {
   // 状态由事件派生：smoking 行为进行中 → Smoking；其余回落到 Idle
   return behavior.current === "smoking" ? "Smoking" : "Idle";
 }
 
-export function BehaviorPanel({ state }: { state: DebugState }) {
+export function BehaviorPanel({ state }: { state: MonitorState }) {
   const { behavior } = state;
   const stage = currentStage(behavior);
   return (
@@ -96,7 +96,7 @@ export function BehaviorPanel({ state }: { state: DebugState }) {
 
 // ---- Event Timeline 面板（最新在上） ----
 
-export function EventTimelinePanel({ events }: { events: DebugEventItem[] }) {
+export function EventTimelinePanel({ events }: { events: MonitorEventItem[] }) {
   return (
     <Card title="事件时间轴" className="h-full">
       {events.length === 0 ? (
@@ -158,7 +158,7 @@ export function LogPanel({ logs }: { logs: LogItem[] }) {
 
 // ---- 性能面板 ----
 
-const PERF_ROWS: Array<{ key: keyof DebugPerformance; label: string; unit?: string }> = [
+const PERF_ROWS: Array<{ key: keyof MonitorPerformance; label: string; unit?: string }> = [
   { key: "cpu_percent", label: "CPU", unit: "%" },
   { key: "memory_mb", label: "内存", unit: "MB" },
   { key: "camera_fps", label: "摄像头帧率" },
@@ -168,7 +168,7 @@ const PERF_ROWS: Array<{ key: keyof DebugPerformance; label: string; unit?: stri
   { key: "latency_ms", label: "延迟", unit: "ms" },
 ];
 
-export function PerformancePanel({ perf }: { perf: Partial<DebugPerformance> }) {
+export function PerformancePanel({ perf }: { perf: Partial<MonitorPerformance> }) {
   return (
     <Card title="性能" className="h-full">
       {Object.keys(perf).length === 0 ? (
@@ -192,7 +192,7 @@ export function PerformancePanel({ perf }: { perf: Partial<DebugPerformance> }) 
 
 // ---- 插件状态面板 ----
 
-export function PluginPanel({ state }: { state: DebugState }) {
+export function PluginPanel({ state }: { state: MonitorState }) {
   return (
     <Card title="插件状态" className="h-full">
       {state.plugins.length === 0 ? (

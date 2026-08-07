@@ -47,7 +47,7 @@ class VisionPipeline:
         self._bus = bus
         self._process_fps = max(process_fps, 0.1)
         self._sleep_fps = max(sleep_fps, 0.05)
-        # 可选观测钩子（Debug Center 注入）；生产环境为 None，零开销
+        # 可选观测钩子（监控中心注入）；生产环境为 None，零开销
         self._frame_tap = frame_tap
         self._running = False
         self._last_index = -1

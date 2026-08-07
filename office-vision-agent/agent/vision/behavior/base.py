@@ -38,6 +38,6 @@ class BaseBehaviorDetector(ABC):
         """休眠时由 PluginManager 调用；子类可覆写以重置内部状态。"""
         self.enabled = False
 
-    def debug_info(self) -> dict[str, Any]:
-        """供 Debug Center 展示的内部状态快照；子类可覆写。"""
+    def monitor_info(self) -> dict[str, Any]:
+        """供监控中心展示的内部状态快照；子类可覆写。"""
         return {}

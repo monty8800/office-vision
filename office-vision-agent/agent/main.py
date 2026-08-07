@@ -1,10 +1,10 @@
-"""Agent 装配入口：配置 → 工厂 → EventBus → 管线 → 推送器（→ Debug Center）。
+"""Agent 装配入口：配置 → 工厂 → EventBus → 管线 → 推送器（→ 监控中心）。
 
 装配顺序即架构：
 1. load_config（唯一配置源 agent.yaml）
 2. EventBus + PresenceManager + PluginManager（事件驱动，第六原则）
 3. Camera / Detector / Pose 全部经工厂创建（第三/五原则）
-4. 实时监控仅在 debug.enabled 时装配，frame_tap 注入管线（独立模块）
+4. 实时监控仅在 monitor.enabled 时装配，frame_tap 注入管线（独立模块）
 5. EventPusher：事件 → 本地离线队列 → HTTP 批量上报（第一原则，Agent 不碰数据库）
 
 运行：`uv run python -m agent.main` 或 `uv run agent`（见 pyproject scripts）。
@@ -21,9 +21,9 @@ from loguru import logger
 
 from agent.core.config import AgentConfig, load_config
 from agent.core.logging import setup_logging
-from agent.debug.api import create_debug_app
-from agent.debug.hub import DebugHub
 from agent.events.bus import EventBus
+from agent.monitor.api import create_monitor_app
+from agent.monitor.hub import MonitorHub
 from agent.plugins.manager import PluginManager
 from agent.presence.manager import PresenceManager
 from agent.transport.heartbeat import HeartbeatTask
@@ -37,22 +37,24 @@ from agent.vision.pipeline import VisionPipeline
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def _build_debug_hub(config: AgentConfig, bus: EventBus, plugins: PluginManager) -> DebugHub | None:
-    """debug.enabled=false 时返回 None，管线不注入钩子，生产零开销。"""
-    if not config.debug.enabled:
-        logger.info("实时监控已关闭（debug.enabled=false）")
+def _build_monitor_hub(
+    config: AgentConfig, bus: EventBus, plugins: PluginManager
+) -> MonitorHub | None:
+    """monitor.enabled=false 时返回 None，管线不注入钩子，生产零开销。"""
+    if not config.monitor.enabled:
+        logger.info("实时监控已关闭（monitor.enabled=false）")
         return None
-    hub = DebugHub(config.agent.device_id, config.debug, bus)
-    hub.register_plugins(plugins.names, plugins.debug_infos)  # 新插件自动出现在监控页
-    logger.info("实时监控已启用（端口 {}）", config.debug.port)
+    hub = MonitorHub(config.agent.device_id, config.monitor, bus)
+    hub.register_plugins(plugins.names, plugins.monitor_infos)  # 新插件自动出现在监控页
+    logger.info("实时监控已启用（端口 {}）", config.monitor.port)
     return hub
 
 
-async def _serve_debug(hub: DebugHub) -> None:
-    """Debug HTTP 服务与主循环同 loop 运行。"""
+async def _serve_monitor(hub: MonitorHub) -> None:
+    """监控 HTTP 服务与主循环同 loop 运行。"""
     server = uvicorn.Server(
         uvicorn.Config(
-            create_debug_app(hub),
+            create_monitor_app(hub),
             host="127.0.0.1",
             port=hub.settings.port,
             log_level="warning",
@@ -69,7 +71,7 @@ async def _run(config: AgentConfig) -> None:
     plugins.load_all()
 
     presence = PresenceManager(config.agent.device_id, config.presence)
-    debug_hub = _build_debug_hub(config, bus, plugins)
+    monitor_hub = _build_monitor_hub(config, bus, plugins)
 
     # ---- 硬件与 AI（工厂创建，可替换） ----
     camera = create_camera(config.camera_type, config.camera)
@@ -85,7 +87,7 @@ async def _run(config: AgentConfig) -> None:
         bus,
         process_fps=config.pipeline.process_fps,
         sleep_fps=config.pipeline.sleep_fps,
-        frame_tap=debug_hub.on_frame if debug_hub else None,
+        frame_tap=monitor_hub.on_frame if monitor_hub else None,
     )
 
     pusher = EventPusher(
@@ -110,8 +112,8 @@ async def _run(config: AgentConfig) -> None:
         asyncio.create_task(pusher.run(), name="pusher"),
         asyncio.create_task(heartbeat.run(), name="heartbeat"),  # 摄像头失败也保持心跳
     ]
-    if debug_hub:
-        tasks.append(asyncio.create_task(_serve_debug(debug_hub), name="debug-http"))
+    if monitor_hub:
+        tasks.append(asyncio.create_task(_serve_monitor(monitor_hub), name="monitor-http"))
 
     if pipeline.open():
         tasks.append(asyncio.create_task(pipeline.run(), name="pipeline"))

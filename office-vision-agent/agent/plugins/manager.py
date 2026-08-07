@@ -47,14 +47,14 @@ class PluginManager:
     def names(self) -> list[str]:
         return [d.name for d in self._detectors]
 
-    def debug_infos(self) -> list[dict[str, Any]]:
-        """各插件的内部状态快照（Debug Center 诊断用）。"""
+    def monitor_infos(self) -> list[dict[str, Any]]:
+        """各插件的内部状态快照（监控中心诊断用）。"""
         infos: list[dict[str, Any]] = []
         for detector in self._detectors:
             try:
-                info = detector.debug_info()
+                info = detector.monitor_info()
             except Exception:
-                logger.exception("插件 {} debug_info 失败", detector.name)
+                logger.exception("插件 {} monitor_info 失败", detector.name)
                 info = {}
             infos.append({"name": detector.name, **info})
         return infos

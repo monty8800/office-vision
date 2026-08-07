@@ -15,7 +15,7 @@ flowchart LR
         PIPE[VisionPipeline<br/>process_fps / sleep_fps]
         BUS[(EventBus)]
         PUSH[EventPusher<br/>先落盘后上报]
-        DBG[实时监控服务<br/>独立模块 · 可配置关闭]
+        MON[实时监控服务<br/>独立模块 · 可配置关闭]
     end
 
     subgraph Server["office-vision-server（中心服务）"]
@@ -27,7 +27,7 @@ flowchart LR
 
     subgraph Dash["office-vision-dashboard（Next.js）"]
         PAGES[概览 / 趋势 / 时间轴 / 系统状态]
-        DEBUGPAGE[/monitor 实时监控页/]
+        MONPAGE[/monitor 实时监控页/]
     end
 
     CAM --> PIPE
@@ -39,13 +39,13 @@ flowchart LR
     PLUG -- 事件 --> BUS
     BUS --> PUSH
     PUSH -- HTTP 批量 JSON --> API
-    BUS -. 订阅（只读） .-> DBG
-    PIPE -. frame_tap 钩子 .-> DBG
+    BUS -. 订阅（只读） .-> MON
+    PIPE -. frame_tap 钩子 .-> MON
 
     API --> HND --> DB
     DB --> STATS
     STATS -- /api/* --> PAGES
-    DBG -- /debug/*（MJPEG 流） --> DEBUGPAGE
+    MON -- /monitor/*（MJPEG 流） --> MONPAGE
 ```
 
 ## 二、八条开发原则的落地位置
@@ -102,26 +102,28 @@ flowchart TB
         T[frame_tap 钩子<br/>帧缓冲 / Overlay / 距离]
         PF[PerfCollector<br/>CPU / 内存 / FPS / 延迟]
     end
-    HUB[DebugHub 中枢<br/>状态全部由事件派生，不读业务内部状态]
+    HUB[MonitorHub 中枢<br/>状态全部由事件派生，不读业务内部状态]
     E --> HUB
     T --> HUB
     PF --> HUB
-    HUB --> A1[GET /debug/state]
-    HUB --> A2[GET /debug/stream · MJPEG]
-    HUB --> A3[GET /debug/events]
-    HUB --> A4[POST /debug/snapshot · overlays · labels]
-    HUB --> A5[GET /debug/replays · 截图浏览]
-    NX[Next.js rewrites 代理<br/>/agent-debug/* → :8100] --> A1 & A2 & A3 & A4 & A5
+    HUB --> A1[GET /monitor/state]
+    HUB --> A2[GET /monitor/stream · MJPEG]
+    HUB --> A3[GET /monitor/events]
+    HUB --> A4[POST /monitor/snapshot · overlays · labels]
+    HUB --> A5[GET /monitor/replays · 截图浏览]
+    NX[Next.js rewrites 代理<br/>/agent-monitor/* → :8100] --> A1 & A2 & A3 & A4 & A5
     NX --> UI[/monitor 实时监控页面<br/>实时画面 · 行为状态 + 状态机<br/>事件时间轴 · 性能<br/>插件状态 · 画面标注 · 回放 · 快照/]
 ```
 
 关键约束（Spec 强制）：
-- **独立模块**：`agent/debug/` 8 个文件，业务代码零调试逻辑；管线仅暴露可选 `frame_tap`（生产为 None 零开销）
+- **独立模块**：`agent/monitor/` 8 个文件，业务代码零调试逻辑；管线仅暴露可选 `frame_tap`（生产为 None 零开销）
 - **只经 EventBus**：行为状态、插件状态、时间轴全部由事件派生
-- **注册机制**：新插件放进 `plugins/` 后，`register_plugins(plugins.names, plugins.debug_infos)` 自动带入监控页，无需改实时监控
-- **可关闭**：`debug.enabled=false` 时不装配 Hub、不启动 :8100 监控服务、不注入钩子
+- **注册机制**：新插件放进 `plugins/` 后，`register_plugins(plugins.names, plugins.monitor_infos)` 自动带入监控页，无需改实时监控
+- **可关闭**：`monitor.enabled=false` 时不装配 Hub、不启动 :8100 监控服务、不注入钩子
 - **Event Replay**：SmokingStarted/Ended 触发，自动保存事件前 10s + 过程 + 后 10s（帧环形缓冲 30s）；不录视频，按间隔抽帧保存 JPEG 截图以节省磁盘
-- **Label Mode**：接口已预留（`POST /debug/labels`），未来生成训练数据集
+- **Label Mode**：接口已预留（`POST /monitor/labels`），未来生成训练数据集
+- **多 Agent**：Dashboard 配置 `OVA_AGENT_MONITOR_URLS`（`device_id=url` 逗号分隔）后，监控页出现设备切换器，
+  由 `proxy.ts` 运行时将 `/agent-monitor/<device>/*` 转发至各台 Agent；未配置时仍走 `/agent-monitor` rewrite 单设备回退
 
 ## 五、Server 数据模型
 
@@ -137,7 +139,7 @@ flowchart TB
 # 1. Server（:8000）
 cd office-vision-server && uv sync && uv run uvicorn server.main:app
 
-# 2. Agent（需摄像头权限；debug 服务 :8100）
+# 2. Agent（需摄像头权限；监控服务 :8100）
 cd office-vision-agent && uv sync && uv run python scripts/download_models.py && uv run python -m agent.main
 
 # 3. Dashboard（:3000，代理已配置）
@@ -154,5 +156,6 @@ cd office-vision-server && uv run python scripts/simulate_events.py
   `agent.yaml`（如 `detector.cigarette_weights`）部署回 Agent
 - 新硬件：`camera/rtsp.py` 等实现 `BaseCamera` + 工厂注册一行
 - 新 AI 后端：`detector/<engine>.py` 实现 `BaseDetector` + 工厂注册一行
-- 多 Agent：Server 已按 `device_id` 维度隔离统计
+- 多 Agent：Server 已按 `device_id` 维度隔离统计；Dashboard 概览/时间轴/趋势页提供设备筛选器（`?device=` 参数），
+  实时监控页经 `OVA_AGENT_MONITOR_URLS` 映射切换多台 Agent；每台 Agent 需在 `agent.yaml` 配置唯一 `agent.device_id`
 - 自动化联动：`server/automation/`（Home Assistant）配置段已预留

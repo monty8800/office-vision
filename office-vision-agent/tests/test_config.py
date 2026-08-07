@@ -18,8 +18,8 @@ class TestLoadConfig:
         assert config.pose_type == "mediapipe"
         assert config.pipeline.process_fps == 10.0
         assert config.presence.sleep_after_seconds == 300
-        assert config.debug.enabled is True
-        assert config.debug.port == 8100
+        assert config.monitor.enabled is True
+        assert config.monitor.port == 8100
 
     def test_工厂所需原始段保留(self) -> None:
         config = load_config()
@@ -39,7 +39,7 @@ class TestLoadConfig:
         config = load_config(config_file)
         assert config.agent.device_id == "test"
         assert config.pipeline.process_fps == 10.0
-        assert config.debug.enabled is False  # DebugSettings 默认关闭
+        assert config.monitor.enabled is False  # MonitorSettings 默认关闭
 
     def test_文件不存在报错(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match="配置文件不存在"):

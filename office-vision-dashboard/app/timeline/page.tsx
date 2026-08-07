@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   eventLabel,
   formatTime,
@@ -9,6 +9,7 @@ import {
   type EventLogItem,
 } from "@/lib/server-api";
 import { Badge, Card, EmptyState } from "@/components/ui";
+import { DeviceFilter, useDeviceFilter } from "@/components/device-filter";
 
 function eventTone(type: string): "green" | "amber" | "red" | "zinc" | "blue" {
   if (type.startsWith("Smoking")) return "red";
@@ -17,7 +18,17 @@ function eventTone(type: string): "green" | "amber" | "red" | "zinc" | "blue" {
   return "zinc";
 }
 
+// useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
 export default function TimelinePage() {
+  return (
+    <Suspense fallback={null}>
+      <TimelineContent />
+    </Suspense>
+  );
+}
+
+function TimelineContent() {
+  const { device } = useDeviceFilter();
   const [events, setEvents] = useState<EventLogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,7 +36,7 @@ export default function TimelinePage() {
     let active = true;
     const load = async () => {
       try {
-        const result = await serverApi.events(200);
+        const result = await serverApi.events(200, device);
         if (active) {
           // 心跳等周期性事件不进时间轴（避免淹没业务事件）
           setEvents(result.events.filter((e) => !NOISE_EVENT_TYPES.has(e.event_type)));
@@ -41,15 +52,18 @@ export default function TimelinePage() {
       active = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [device]);
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-xl font-bold">事件时间轴</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Server 收到的全部 Agent 事件（倒序，每 5 秒刷新）
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold">事件时间轴</h1>
+          <p className="mt-1 text-sm text-zinc-500">
+            Server 收到的全部 Agent 事件（倒序，每 5 秒刷新）
+          </p>
+        </div>
+        <DeviceFilter />
       </header>
 
       <Card>

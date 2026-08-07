@@ -17,7 +17,7 @@ dependencies = [
     # 通信（阶段6起使用）
     "httpx>=0.27",
     "aiosqlite>=0.20",
-    # Debug Center（仅 debug.enabled=true 时使用）
+    # 监控中心（仅 monitor.enabled=true 时使用）
     "fastapi>=0.111",
     "uvicorn>=0.30",
     "psutil>=6.0",

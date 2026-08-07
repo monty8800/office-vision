@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import {
-  debugApi,
-  type DebugEventItem,
+  type MonitorApi,
+  type MonitorEventItem,
   type OverlayKey,
   type OverlayState,
   type ReplayMeta,
-} from "@/lib/debug-api";
+} from "@/lib/monitor-api";
 import { Card, EmptyState } from "@/components/ui";
 import { eventLabel } from "@/lib/server-api";
 
@@ -25,9 +25,11 @@ const OVERLAY_LABELS: Record<OverlayKey, string> = {
 // ---- Overlay 开关 ----
 
 export function OverlayControls({
+  api,
   overlays,
   onChanged,
 }: {
+  api: MonitorApi;
   overlays: OverlayState;
   onChanged: (next: OverlayState) => void;
 }) {
@@ -35,7 +37,7 @@ export function OverlayControls({
     const value = !overlays[key];
     onChanged({ ...overlays, [key]: value }); // 乐观更新
     try {
-      const next = await debugApi.setOverlays({ [key]: value });
+      const next = await api.setOverlays({ [key]: value });
       onChanged(next);
     } catch {
       onChanged({ ...overlays, [key]: !value }); // 回滚
@@ -63,7 +65,7 @@ export function OverlayControls({
 
 // ---- Event Replay 列表 + 截图浏览（不录视频，节省磁盘） ----
 
-export function ReplayPanel({ replays }: { replays: ReplayMeta[] }) {
+export function ReplayPanel({ api, replays }: { api: MonitorApi; replays: ReplayMeta[] }) {
   const [selected, setSelected] = useState<string | null>(null);
   const selectedReplay = replays.find((r) => r.event_id === selected) ?? null;
   return (
@@ -78,7 +80,7 @@ export function ReplayPanel({ replays }: { replays: ReplayMeta[] }) {
                 {selectedReplay.snapshots.map((name) => (
                   <img
                     key={name}
-                    src={debugApi.replaySnapshotUrl(selectedReplay.event_id, name)}
+                    src={api.replaySnapshotUrl(selectedReplay.event_id, name)}
                     alt={`${selectedReplay.event_type} ${name}`}
                     className="w-full rounded border border-zinc-800/60"
                   />
@@ -123,11 +125,17 @@ export function ReplayPanel({ replays }: { replays: ReplayMeta[] }) {
 
 // ---- Snapshot + Label Mode（预留） ----
 
-export function SnapshotPanel({ latestEvent }: { latestEvent: DebugEventItem | null }) {
+export function SnapshotPanel({
+  api,
+  latestEvent,
+}: {
+  api: MonitorApi;
+  latestEvent: MonitorEventItem | null;
+}) {
   const [message, setMessage] = useState<string | null>(null);
   const save = async () => {
     try {
-      const result = await debugApi.saveSnapshot();
+      const result = await api.saveSnapshot();
       setMessage(`已保存：${result.image.split("/").pop()}`);
     } catch (e) {
       setMessage(`保存失败：${e instanceof Error ? e.message : String(e)}`);
@@ -136,7 +144,7 @@ export function SnapshotPanel({ latestEvent }: { latestEvent: DebugEventItem | n
   const label = async (verdict: "correct" | "wrong") => {
     if (!latestEvent) return;
     try {
-      await debugApi.label(latestEvent.event_type, verdict);
+      await api.label(latestEvent.event_type, verdict);
       setMessage(`已标注 ${verdict === "correct" ? "✔ 正确" : "✖ 错误"}`);
     } catch (e) {
       setMessage(`标注失败：${e instanceof Error ? e.message : String(e)}`);

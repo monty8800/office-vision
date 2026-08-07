@@ -1,4 +1,4 @@
-"""DebugHub：Debug Center 的中枢。
+"""MonitorHub：实时监控中心的中枢。
 
 数据来源严格遵守 Spec：
 - 事件流 / 行为状态 / 插件状态 → 全部来自 EventBus 订阅，不读业务内部状态
@@ -22,11 +22,6 @@ from loguru import logger
 if TYPE_CHECKING:
     from loguru import Message
 
-from agent.debug.annotator import OverlayToggles, annotate, hand_mouth_distance
-from agent.debug.config import DebugSettings
-from agent.debug.frame_buffer import FrameBuffer
-from agent.debug.perf import PerfCollector
-from agent.debug.replay import ReplayRecorder
 from agent.events.bus import EventBus
 from agent.events.types import (
     AgentAlive,
@@ -36,16 +31,21 @@ from agent.events.types import (
     SeatEmpty,
     SeatOccupied,
 )
+from agent.monitor.annotator import OverlayToggles, annotate, hand_mouth_distance
+from agent.monitor.config import MonitorSettings
+from agent.monitor.frame_buffer import FrameBuffer
+from agent.monitor.perf import PerfCollector
+from agent.monitor.replay import ReplayRecorder
 from agent.vision.frame import VisionContext
 
 _TIMELINE_LIMIT = 500
 _LOG_LIMIT = 500
 
 
-class DebugHub:
-    """聚合帧、事件、性能与状态，供 Debug HTTP API 消费。"""
+class MonitorHub:
+    """聚合帧、事件、性能与状态，供监控 HTTP API 消费。"""
 
-    def __init__(self, device_id: str, settings: DebugSettings, bus: EventBus) -> None:
+    def __init__(self, device_id: str, settings: MonitorSettings, bus: EventBus) -> None:
         self._device_id = device_id
         self.settings = settings
         self.buffer = FrameBuffer(settings.frame_buffer_seconds)
@@ -71,7 +71,7 @@ class DebugHub:
         self._behavior_since: str | None = None
         self._plugins_suspended = False
         self._plugin_names: list[str] = []
-        self._plugin_debug: Callable[[], list[dict[str, Any]]] | None = None
+        self._plugin_monitor: Callable[[], list[dict[str, Any]]] | None = None
 
         # 最近帧上下文（Overlay 渲染用）
         self._latest_context: VisionContext | None = None
@@ -85,10 +85,10 @@ class DebugHub:
     def register_plugins(
         self,
         names: list[str],
-        debug_provider: Callable[[], list[dict[str, Any]]] | None = None,
+        monitor_provider: Callable[[], list[dict[str, Any]]] | None = None,
     ) -> None:
         self._plugin_names = list(names)
-        self._plugin_debug = debug_provider
+        self._plugin_monitor = monitor_provider
 
     # ---- 管线帧钩子（唯一与视觉层的接触点） ----
 
@@ -99,11 +99,11 @@ class DebugHub:
         if context.pose.has_face or context.pose.hands:
             self.perf.tick_ai()
 
-    # ---- 事件订阅（全部调试数据的来源） ----
+    # ---- 事件订阅（全部监控数据的来源） ----
 
     async def _on_event(self, event: Event) -> None:
         if isinstance(event, AgentAlive):
-            return  # 心跳仅用于 Server 在线判定，不进调试时间轴/状态派生
+            return  # 心跳仅用于 Server 在线判定，不进监控时间轴/状态派生
         self._latest_event_text = f"{event.event_type} @ {event.occurred_at:%H:%M:%S}"
         self._timeline.append(
             {
@@ -162,7 +162,7 @@ class DebugHub:
                 {
                     "name": name,
                     "status": "suspended" if self._plugins_suspended else "running",
-                    **self._plugin_debug_by_name().get(name, {}),
+                    **self._plugin_monitor_by_name().get(name, {}),
                 }
                 for name in self._plugin_names
             ],
@@ -190,14 +190,14 @@ class DebugHub:
             }
         )
 
-    def _plugin_debug_by_name(self) -> dict[str, dict[str, Any]]:
-        """插件调试快照按名称索引（provider 未注册或异常时为空）。"""
-        if self._plugin_debug is None:
+    def _plugin_monitor_by_name(self) -> dict[str, dict[str, Any]]:
+        """插件监控快照按名称索引（provider 未注册或异常时为空）。"""
+        if self._plugin_monitor is None:
             return {}
         try:
-            infos = self._plugin_debug()
+            infos = self._plugin_monitor()
         except Exception:
-            logger.exception("插件 debug_info 采集失败")
+            logger.exception("插件 monitor_info 采集失败")
             return {}
         result: dict[str, dict[str, Any]] = {}
         for info in infos:

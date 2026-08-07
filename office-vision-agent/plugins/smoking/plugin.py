@@ -45,8 +45,8 @@ class SmokingDetector(BaseBehaviorDetector):
         self._last_cigarette_visible = cigarette_visible
         return self._machine.update(signal, context.frame.timestamp, cigarette_visible)
 
-    def debug_info(self) -> dict[str, Any]:
-        info = self._machine.debug_info(self._last_timestamp)
+    def monitor_info(self) -> dict[str, Any]:
+        info = self._machine.monitor_info(self._last_timestamp)
         info["signal"] = {
             "hit": self._last_signal.hit,
             "index_near": self._last_signal.index_near,

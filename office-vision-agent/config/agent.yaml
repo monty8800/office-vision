@@ -47,8 +47,8 @@ server:
 plugins:
   dir: "plugins"                 # 行为检测插件目录
 
-# Debug Center（开发调试中心）：仅开发模式启用，发布版 enabled=false
-debug:
+# 实时监控中心：仅开发模式启用，发布版 enabled=false
+monitor:
   enabled: true
   overlay: true                  # 摄像头画面 Overlay（Face/Hand/Mouth/BBox/Distance）
   performance: true              # CPU / Memory / FPS / Inference / Latency
@@ -59,4 +59,4 @@ debug:
   replay_snapshot_interval: 1    # 回放截图抽帧间隔（秒）
   save_snapshot: true            # 一键截图（图片 + Overlay + 状态）
   frame_buffer_seconds: 30       # 帧环形缓冲时长（供 Replay 取前段）
-  port: 8100                     # Agent 内置 debug HTTP 服务端口
+  port: 8100                     # Agent 内置监控 HTTP 服务端口

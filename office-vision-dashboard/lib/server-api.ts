@@ -69,6 +69,11 @@ export const BEHAVIORS: BehaviorMeta[] = [
   { key: "smoking", label: "抽烟", tone: "red", icon: "🚬" },
 ];
 
+// 设备筛选查询串：Server 统计/事件接口均支持 device_id 过滤（不传则全设备聚合）
+function deviceParam(deviceId?: string | null, prefix = "&"): string {
+  return deviceId ? `${prefix}device_id=${encodeURIComponent(deviceId)}` : "";
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
@@ -77,21 +82,27 @@ async function getJson<T>(path: string): Promise<T> {
 
 export const serverApi = {
   health: () => getJson<{ status: string }>("/api/health"),
-  events: (limit = 100) =>
-    getJson<{ events: EventLogItem[] }>(`/api/events?limit=${limit}`),
+  events: (limit = 100, deviceId?: string | null) =>
+    getJson<{ events: EventLogItem[] }>(`/api/events?limit=${limit}${deviceParam(deviceId)}`),
   agents: () => getJson<{ agents: AgentInfo[] }>("/api/agents"),
   presence: () => getJson<{ devices: Record<string, PresenceDevice> }>("/api/presence"),
   behaviors: () => getJson<{ behaviors: BehaviorInfo[] }>("/api/behaviors"),
-  behaviorToday: (behavior: string) =>
-    getJson<BehaviorSummary>(`/api/behaviors/${behavior}/today`),
-  behaviorSessions: (behavior: string, limit = 50) =>
-    getJson<{ items: BehaviorSession[]; limit: number; offset: number }>(
-      `/api/behaviors/${behavior}/sessions?limit=${limit}`
+  behaviorToday: (behavior: string, deviceId?: string | null) =>
+    getJson<BehaviorSummary>(
+      `/api/behaviors/${behavior}/today${deviceParam(deviceId, "?")}`
     ),
-  behaviorTrend: (behavior: string, days = 7) =>
-    getJson<{ days: TrendDay[] }>(`/api/behaviors/${behavior}/trend?days=${days}`),
-  behaviorHourly: (behavior: string) =>
-    getJson<{ date: string; hours: HourBucket[] }>(`/api/behaviors/${behavior}/hourly`),
+  behaviorSessions: (behavior: string, limit = 50, deviceId?: string | null) =>
+    getJson<{ items: BehaviorSession[]; limit: number; offset: number }>(
+      `/api/behaviors/${behavior}/sessions?limit=${limit}${deviceParam(deviceId)}`
+    ),
+  behaviorTrend: (behavior: string, days = 7, deviceId?: string | null) =>
+    getJson<{ days: TrendDay[] }>(
+      `/api/behaviors/${behavior}/trend?days=${days}${deviceParam(deviceId)}`
+    ),
+  behaviorHourly: (behavior: string, deviceId?: string | null) =>
+    getJson<{ date: string; hours: HourBucket[] }>(
+      `/api/behaviors/${behavior}/hourly${deviceParam(deviceId, "?")}`
+    ),
 };
 
 export function formatDuration(seconds: number): string {

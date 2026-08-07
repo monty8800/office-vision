@@ -14,6 +14,19 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
+## 多 Agent 支持
+
+- 每台 Agent 需在 `agent.yaml` 配置唯一的 `agent.device_id`；Server 统计接口均支持 `?device_id=` 过滤
+- 概览 / 时间轴 / 行为分析页：多设备时自动出现设备筛选器（状态存于 `?device=` URL 参数）
+- 实时监控页：配置 `OVA_AGENT_MONITOR_URLS`（`device_id=url` 逗号分隔）后出现设备切换器，
+  由 `proxy.ts` 运行时将 `/agent-monitor/<device>/*` 转发至对应 Agent；未配置时回退单设备模式
+  （`OVA_AGENT_MONITOR_URL`，默认 http://localhost:8100）
+
+```bash
+# 多 Agent 示例
+OVA_AGENT_MONITOR_URLS="macbook=http://192.168.1.10:8100,office-pc=http://192.168.1.11:8100" npm run dev
+```
+
 ## 计划页面（阶段7迁移自原型 frontend/）
 
 - 首页概览：今日抽烟根数 / 累计时长 / 平均时长 / 在岗状态

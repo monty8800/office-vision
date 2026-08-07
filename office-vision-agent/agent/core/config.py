@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from agent.debug.config import DebugSettings
+from agent.monitor.config import MonitorSettings
 from agent.presence.manager import PresenceSettings
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "agent.yaml"
@@ -58,7 +58,7 @@ class AgentConfig:
     presence: PresenceSettings = field(default_factory=PresenceSettings)
     server: ServerSection = field(default_factory=ServerSection)
     plugins: PluginsSection = field(default_factory=PluginsSection)
-    debug: DebugSettings = field(default_factory=DebugSettings)
+    monitor: MonitorSettings = field(default_factory=MonitorSettings)
 
     @property
     def camera_type(self) -> str:
@@ -106,5 +106,5 @@ def load_config(path: str | Path | None = None) -> AgentConfig:
         presence=_typed(PresenceSettings, _section(raw, "presence")),
         server=_typed(ServerSection, _section(raw, "server")),
         plugins=_typed(PluginsSection, _section(raw, "plugins")),
-        debug=_typed(DebugSettings, _section(raw, "debug")),
+        monitor=_typed(MonitorSettings, _section(raw, "monitor") or _section(raw, "debug")),
     )

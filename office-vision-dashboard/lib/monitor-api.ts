@@ -1,7 +1,9 @@
-// Agent Debug Center API 客户端（http://localhost:8100 经 Next 代理）
-// 仅开发模式可用：agent.yaml debug.enabled=false 时服务不存在。
+// Agent 监控中心 API 客户端（http://localhost:8100 经 Next 代理）
+// 仅开发模式可用：agent.yaml monitor.enabled=false 时服务不存在。
+// 多 Agent：createMonitorApi(`/agent-monitor/${device}`) 经 proxy.ts 转发至对应 Agent；
+// 默认实例 monitorApi 走 /agent-monitor rewrite（单设备回退）。
 
-export interface DebugBehavior {
+export interface MonitorBehavior {
   presence: string;
   current: string;
   since: string | null;
@@ -9,12 +11,12 @@ export interface DebugBehavior {
   hand_mouth_distance_px: number | null;
 }
 
-export interface DebugPlugin {
+export interface MonitorPlugin {
   name: string;
   status: string;
 }
 
-export interface DebugPerformance {
+export interface MonitorPerformance {
   cpu_percent: number;
   memory_mb: number;
   camera_fps: number;
@@ -36,16 +38,16 @@ export type OverlayKey =
 
 export type OverlayState = Record<OverlayKey, boolean>;
 
-export interface DebugState {
+export interface MonitorState {
   device_id: string;
-  behavior: DebugBehavior;
-  plugins: DebugPlugin[];
-  performance: Partial<DebugPerformance>;
+  behavior: MonitorBehavior;
+  plugins: MonitorPlugin[];
+  performance: Partial<MonitorPerformance>;
   overlays: OverlayState;
   frame_buffer_frames: number;
 }
 
-export interface DebugEventItem {
+export interface MonitorEventItem {
   time: string;
   event_type: string;
   device_id: string;
@@ -86,23 +88,41 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const debugApi = {
-  state: () => getJson<DebugState>("/agent-debug/state"),
-  events: (limit = 100) =>
-    getJson<{ events: DebugEventItem[] }>(`/agent-debug/events?limit=${limit}`),
-  logs: (limit = 200) => getJson<{ logs: LogItem[] }>(`/agent-debug/logs?limit=${limit}`),
-  replays: () => getJson<{ replays: ReplayMeta[] }>("/agent-debug/replays"),
-  setOverlays: (changes: Partial<OverlayState>) =>
-    postJson<OverlayState>("/agent-debug/overlays", changes),
-  saveSnapshot: () =>
-    postJson<{ image: string; meta: string }>("/agent-debug/snapshot", {}),
-  label: (eventId: string, verdict: "correct" | "wrong", note = "") =>
-    postJson<Record<string, unknown>>("/agent-debug/labels", {
-      event_id: eventId,
-      verdict,
-      note,
-    }),
-  streamUrl: "/agent-debug/stream",
-  replaySnapshotUrl: (eventId: string, name: string) =>
-    `/agent-debug/replays/${eventId}/frames/${name}`,
-};
+export function createMonitorApi(basePath = "/agent-monitor") {
+  return {
+    state: () => getJson<MonitorState>(`${basePath}/state`),
+    events: (limit = 100) =>
+      getJson<{ events: MonitorEventItem[] }>(`${basePath}/events?limit=${limit}`),
+    logs: (limit = 200) => getJson<{ logs: LogItem[] }>(`${basePath}/logs?limit=${limit}`),
+    replays: () => getJson<{ replays: ReplayMeta[] }>(`${basePath}/replays`),
+    setOverlays: (changes: Partial<OverlayState>) =>
+      postJson<OverlayState>(`${basePath}/overlays`, changes),
+    saveSnapshot: () =>
+      postJson<{ image: string; meta: string }>(`${basePath}/snapshot`, {}),
+    label: (eventId: string, verdict: "correct" | "wrong", note = "") =>
+      postJson<Record<string, unknown>>(`${basePath}/labels`, {
+        event_id: eventId,
+        verdict,
+        note,
+      }),
+    streamUrl: `${basePath}/stream`,
+    replaySnapshotUrl: (eventId: string, name: string) =>
+      `${basePath}/replays/${eventId}/frames/${name}`,
+  };
+}
+
+export type MonitorApi = ReturnType<typeof createMonitorApi>;
+
+export const monitorApi = createMonitorApi();
+
+// 多 Agent 模式下已配置映射的设备列表（未配置返回空数组）；
+// 响应结构非法时（如旧进程无此端点，请求落到 rewrite 透传给 Agent 监控服务）
+// 同样视为单设备模式，避免调用方拿到 undefined
+export async function monitorDevices(): Promise<{ devices: string[] }> {
+  try {
+    const r = await getJson<{ devices?: string[] }>("/agent-monitor/devices");
+    return { devices: Array.isArray(r.devices) ? r.devices : [] };
+  } catch {
+    return { devices: [] };
+  }
+}

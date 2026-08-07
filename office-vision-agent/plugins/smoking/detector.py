@@ -86,7 +86,7 @@ def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
 def evaluate_frame(pose: PoseFeatures, config: SmokingConfig) -> SmokingSignal:
     """评估单帧是否呈现夹烟手势（食指近嘴 + 指尖聚拢 + 手腕入区）。
 
-    未命中时也返回最接近命中的那只手的细节，供 Debug 面板诊断。
+    未命中时也返回最接近命中的那只手的细节，供监控面板诊断。
     """
     if pose.mouth_box is None or not pose.hands:
         return SmokingSignal(hit=False)
@@ -111,7 +111,7 @@ def evaluate_frame(pose: PoseFeatures, config: SmokingConfig) -> SmokingSignal:
 
 
 def hand_near_mouth(pose: PoseFeatures, expand: float) -> bool:
-    """宽松版手-嘴判定（Debug Overlay 距离标注用，非检测判据）。"""
+    """宽松版手-嘴判定（监控 Overlay 距离标注用，非检测判据）。"""
     if pose.mouth_box is None or not pose.hands:
         return False
     region = pose.mouth_box.expand(expand)
@@ -147,8 +147,8 @@ class SmokingSessionMachine:
     def state(self) -> SmokingState:
         return self._state
 
-    def debug_info(self, timestamp: float) -> dict[str, object]:
-        """状态机内部快照（Debug Center 诊断用）。"""
+    def monitor_info(self, timestamp: float) -> dict[str, object]:
+        """状态机内部快照（监控中心诊断用）。"""
         return {
             "state": self._state.value,
             "hits": self._hits,
