@@ -1,0 +1,85 @@
+"""平台打包脚本共享逻辑：PyInstaller 编译、zip 自更新资产、DMG 安装包。
+
+RFC-0008：build/ 目录负责平台打包，GitHub Actions 仅调用对应脚本。
+产物统一输出到 dist/：
+- office-vision-tray-{os}.zip   自更新资产（应用本体 + config.yaml）
+- OfficeVisionLauncher-macOS.dmg  人工安装包（仅 macOS）
+"""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DIST = ROOT / "dist"
+STAGE = DIST / "stage"  # PyInstaller 输出暂存区
+APP_NAME = "Office Vision Tray"
+IS_WINDOWS = sys.platform == "win32"
+OS_NAME = "windows" if IS_WINDOWS else "darwin"
+
+
+def pyinstaller_build() -> None:
+    """PyInstaller 编译到 STAGE（macOS 出 .app bundle，Windows 出单文件 exe）。"""
+    shutil.rmtree(DIST, ignore_errors=True)
+    STAGE.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--name", APP_NAME,
+        "--distpath", str(STAGE),
+        "--workpath", str(DIST / "work"),  # 中间产物避开 build/ 脚本目录
+        "--noconfirm",
+        "--clean",
+        # pystray 各平台后端（AppKit/win32）为动态导入，需整包收集避免打包后缺失
+        "--collect-all", "pystray",
+        # 入口用包根 __main__.py（非 launcher/main.py），否则 PyInstaller 下相对导入会失败
+        str(ROOT / "__main__.py"),
+    ]
+    cmd += ["--onefile", "--noconsole"] if IS_WINDOWS else ["--windowed"]
+    subprocess.run(cmd, cwd=ROOT, check=True)
+    if not IS_WINDOWS:
+        # --windowed 会同时残留 onedir 目录，仅保留 .app bundle
+        shutil.rmtree(STAGE / APP_NAME, ignore_errors=True)
+    # 配置随产物分发：用户按部署环境修改服务器地址/Token；升级时 updater 不覆盖已有配置
+    shutil.copy(ROOT / "config.yaml", STAGE / "config.yaml")
+
+
+def make_zip() -> Path:
+    """自更新资产：zip = 应用本体 + config.yaml。"""
+    asset = DIST / f"office-vision-tray-{OS_NAME}.zip"
+    with zipfile.ZipFile(asset, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in STAGE.rglob("*"):
+            if file.is_file():
+                zf.write(file, file.relative_to(STAGE))
+    return asset
+
+
+def make_exe() -> Path:
+    """Windows 便携版单文件（RFC-0008 产物 OfficeVisionLauncher-Windows.exe）。"""
+    if not IS_WINDOWS:
+        raise RuntimeError("exe 便携版仅支持 Windows")
+    dest = DIST / "OfficeVisionLauncher-Windows.exe"
+    shutil.copy(STAGE / f"{APP_NAME}.exe", dest)
+    return dest
+
+
+def make_dmg() -> Path:
+    """人工安装包：hdiutil 生成 DMG（macOS 原生工具，CI runner 自带）。"""
+    if IS_WINDOWS:
+        raise RuntimeError("DMG 仅支持 macOS")
+    app_dir = STAGE / f"{APP_NAME}.app"
+    dmg = DIST / "OfficeVisionLauncher-macOS.dmg"
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "dmg-src"
+        src.mkdir()
+        shutil.copytree(app_dir, src / f"{APP_NAME}.app", symlinks=True)
+        subprocess.run(
+            ["hdiutil", "create", "-volname", APP_NAME, "-srcfolder", str(src),
+             "-ov", "-format", "UDZO", str(dmg)],
+            check=True, capture_output=True,
+        )
+    return dmg
