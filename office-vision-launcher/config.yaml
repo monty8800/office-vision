@@ -1,20 +1,14 @@
-# Office Vision Agent 托盘应用配置
-# 遵循项目第四原则：配置集中于此，禁止硬编码。
-# 部署形态：本应用只运行在 Agent 端（监控点电脑），Server 与 Dashboard 在远程服务器。
+# Office Vision Agent 托盘应用配置（首次启动自动生成）
+# 托盘仅托管 Agent；Server / Dashboard 不在托管范围。
+# 新设备首次启动会自动部署环境（克隆仓库/装依赖/下模型），
+# 仓库公开时无需 Token；若改为私有仓库再填写 github_token。
 
-# 在线升级：从 GitHub Releases 下载新版本资产（可用环境变量覆盖）
-# 新设备首次启动会自动部署环境（克隆仓库/装依赖/下模型），克隆同样依赖此仓库配置
 github_repo: "monty8800/office-vision"
-# 仓库已公开：自动部署与在线升级均无需 Token；若改回私有再填写（建议用环境变量 OVA_GITHUB_TOKEN）
 github_token: ""
-# 资产名模板：{os}=darwin|windows，两平台均为 zip（内含应用本体 + config.yaml）
 asset_pattern: "office-vision-tray-{os}.zip"
 
-# Office Vision Server 服务地址：启动 Agent 前自动同步到 agent.yaml 的 server.url
-# （Agent 配置以 YAML 为唯一源，本应用作为部署入口代为写入），可用 OVA_SERVER_URL 覆盖
 server_url: "http://localhost:8000"
 
-# 受管服务：仅 Agent（Server / Dashboard 由用户自行启动，不在托盘托管范围）
 services:
   - name: agent
     label: "Agent"
@@ -22,8 +16,6 @@ services:
     workdir: "../office-vision-agent"
     command: ["uv", "run", "python", "-m", "agent.main"]
 
-# 崩溃自动重启
 restart_delay_seconds: 3
 
-# Dashboard 地址（托盘菜单一键打开）
 dashboard_url: "http://localhost:3000"

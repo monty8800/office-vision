@@ -1,10 +1,10 @@
 """在线升级：从 GitHub Releases 检查新版本、下载平台资产、自替换并重启。
 
-资产约定（由 scripts/release.py 打包上传，两平台均为 zip）：
+资产约定（由 CI 打包上传，两平台均为 zip）：
 - macOS:   office-vision-tray-darwin.zip（Office Vision Tray.app + config.yaml）
-- Windows: office-vision-tray-windows.zip（exe + config.yaml）
+- Windows: office-vision-tray-windows.zip（onedir 目录 + config.yaml）
 
-升级时只替换应用本体，不覆盖用户已修改的 config.yaml。
+升级时只替换应用本体，不覆盖用户已修改的 config.yaml（安装模式下配置在用户目录，天然不受影响）。
 """
 
 from __future__ import annotations
@@ -122,10 +122,11 @@ def apply_update(asset_path: Path) -> str:
     with zipfile.ZipFile(asset_path) as zf:
         zf.extractall(extract_dir)
     if _IS_WINDOWS:
-        exes = list(extract_dir.rglob("*.exe"))
-        if not exes:
-            raise UpdateError("压缩包内未找到 exe")
-        _apply_windows(exes[0])
+        # 新版 zip 为 onedir 目录：找包含 exe 的顶层目录做整目录替换
+        app_dirs = [p for p in extract_dir.iterdir() if p.is_dir() and any(p.rglob("*.exe"))]
+        if not app_dirs:
+            raise UpdateError("压缩包内未找到应用目录")
+        _apply_windows(app_dirs[0])
     else:
         apps = list(extract_dir.glob("*.app"))
         if not apps:
@@ -134,15 +135,17 @@ def apply_update(asset_path: Path) -> str:
     return "升级完成，应用即将重启"
 
 
-def _apply_windows(new_exe: Path) -> None:
-    current = Path(sys.executable)
+def _apply_windows(new_dir: Path) -> None:
+    """整目录替换：等当前进程退出后 robocopy /MIR 覆盖安装目录再拉起。"""
+    current_exe = Path(sys.executable)
+    install_dir = current_exe.parent
     script = f"""@echo off
 :wait
 tasklist /FI "PID eq {os.getpid()}" | find "{os.getpid()}" >nul && (timeout /t 1 >nul & goto wait)
-move /Y "{new_exe}" "{current}" >nul
-start "" "{current}"
+robocopy "{new_dir}" "{install_dir}" /MIR /NFL /NDL /NJH /NJS >nul
+start "" "{current_exe}"
 """
-    bat = new_exe.parent / "apply_update.bat"
+    bat = new_dir.parent / "apply_update.bat"
     bat.write_text(script, encoding="ascii", errors="ignore")
     flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
     subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags, close_fds=True)

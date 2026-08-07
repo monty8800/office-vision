@@ -97,7 +97,8 @@ def app_support_dir() -> Path:
 
 def _create_default_config() -> Path:
     """生成默认 config.yaml：优先部署目录（倒序尝试，避开 .app 内部），
-    全部不可写（如只读 DMG 卷）则落到用户配置目录。"""
+    全部不可写（如安装到只读位置）则落到用户配置目录（安装模式）。"""
+    global _CONFIG_CREATED
     candidates = [*reversed(_candidate_dirs()), app_support_dir()]
     last_error: Exception | None = None
     for base in candidates:
@@ -105,6 +106,7 @@ def _create_default_config() -> Path:
         try:
             base.mkdir(parents=True, exist_ok=True)
             path.write_text(DEFAULT_CONFIG_YAML, encoding="utf-8")
+            _CONFIG_CREATED = path
             return path
         except OSError as exc:
             last_error = exc
@@ -119,16 +121,36 @@ def config_path() -> Path:
     return _create_default_config()
 
 
+# 首次启动自动生成配置时记录路径（供首次运行引导判断）
+_CONFIG_CREATED: Path | None = None
+
+
+def config_just_created() -> bool:
+    """本次启动是否刚自动生成了 config.yaml（首次安装运行）。"""
+    return _CONFIG_CREATED is not None
+
+
+def _install_mode(config_file: Path) -> bool:
+    """安装模式：配置位于用户配置目录（安装包形态，数据不随应用位置变化）。"""
+    return config_file.parent == app_support_dir()
+
+
 def load_config() -> AppConfig:
-    raw = yaml.safe_load(config_path().read_text(encoding="utf-8"))
-    workdir_base = config_path().parent
+    path = config_path()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    installed = _install_mode(path)
+    # 安装模式：仓库由自动部署克隆到 用户配置目录/office-vision，
+    # workdir 的相对路径按仓库根重新解析；便携模式沿用配置文件所在目录
+    workdir_base = path.parent / "office-vision" if installed else path.parent
 
     services = [
         ServiceSpec(
             name=item["name"],
             label=item.get("label", item["name"]),
             port=int(item["port"]),
-            workdir=(workdir_base / item["workdir"]).resolve(),
+            workdir=(workdir_base / Path(item["workdir"]).name).resolve()
+            if installed
+            else (path.parent / item["workdir"]).resolve(),
             command=tuple(item["command"]),
         )
         for item in raw["services"]
