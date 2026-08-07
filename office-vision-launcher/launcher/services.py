@@ -1,8 +1,9 @@
-"""受管服务生命周期：启动/停止、看门狗自动重启、端口探活、日志落盘。"""
+"""受管服务生命周期：启动/停止、看门狗自动重启、端口探活、日志落盘、服务地址同步。"""
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -72,6 +73,33 @@ def _kill_tree(pid: int) -> None:
         proc.kill()
 
 
+def _sync_server_url(agent_yaml: Path, server_url: str) -> bool:
+    """把服务地址写入 agent.yaml 的 server.url（保留注释与格式，仅改目标行）。
+
+    Agent 配置以 YAML 为唯一源（第四原则），托盘应用作为部署入口代为写入，
+    避免引入环境变量隐式覆盖。
+    """
+    lines = agent_yaml.read_text(encoding="utf-8").splitlines(keepends=True)
+    in_server = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if re.fullmatch(r"server:\s*(#.*)?", stripped):
+            in_server = True
+            continue
+        if in_server:
+            if stripped and not line[0].isspace():
+                break  # 离开 server 段
+            match = re.match(r"^(\s+)url:\s", line)
+            if match:
+                new_line = f'{match.group(1)}url: "{server_url}"\n'
+                if new_line == line:
+                    return False
+                lines[i] = new_line
+                agent_yaml.write_text("".join(lines), encoding="utf-8")
+                return True
+    return False
+
+
 @dataclass
 class ManagedService:
     spec: ServiceSpec
@@ -90,8 +118,15 @@ class ManagedService:
 class ServiceManager:
     """按配置托管服务：start 后由看门狗线程保证进程存活，stop 时彻底终止进程树。"""
 
-    def __init__(self, specs: list[ServiceSpec], restart_delay: float, log_dir: Path):
+    def __init__(
+        self,
+        specs: list[ServiceSpec],
+        restart_delay: float,
+        log_dir: Path,
+        server_url: str = "",
+    ):
         self.restart_delay = restart_delay
+        self.server_url = server_url
         self.log_dir = log_dir
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.services: dict[str, ManagedService] = {
@@ -116,6 +151,7 @@ class ServiceManager:
         svc = self.services[name]
         if self.running(name):
             return
+        self._sync_agent_config(svc)
         svc.stop_flag.clear()
         svc.failed = False
         svc.crash_count = 0
@@ -141,6 +177,19 @@ class ServiceManager:
             self.stop(name)
 
     # ---- 内部 ----
+
+    def _sync_agent_config(self, svc: ManagedService) -> None:
+        """启动前把托盘应用配置的服务地址同步到 agent.yaml（仅存在时生效）。"""
+        if not self.server_url:
+            return
+        agent_yaml = svc.spec.workdir / "config" / "agent.yaml"
+        if not agent_yaml.is_file():
+            return
+        try:
+            if _sync_server_url(agent_yaml, self.server_url):
+                self._append_log(svc, f"已同步服务地址到 agent.yaml：{self.server_url}\n")
+        except OSError as exc:
+            self._append_log(svc, f"同步服务地址失败：{exc}\n")
 
     def _spawn(self, svc: ManagedService) -> subprocess.Popen:
         spec = svc.spec

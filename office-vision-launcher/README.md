@@ -22,10 +22,15 @@ uv run office-vision-tray   # 或 uv run python -m launcher
 
 | 配置项 | 说明 | 环境变量覆盖 |
 | --- | --- | --- |
+| `server_url` | Server 服务地址，默认 `http://localhost:8000`；启动 Agent 前自动同步到 agent.yaml | `OVA_SERVER_URL` |
 | `dashboard_url` | 远程 Dashboard 地址，按实际服务器修改 | `OVA_DASHBOARD_URL` |
 | `github_repo` | 升级源仓库（owner/repo） | `OVA_GITHUB_REPO` |
 | `github_token` | 私有仓库访问 Token（**勿明文提交**） | `OVA_GITHUB_TOKEN` |
 | `services` | 受管服务定义（端口/命令/工作目录） | — |
+
+> 修改服务地址的两种方式：① 托盘菜单「服务地址：xxx（点击修改）」打开 config.yaml
+> 编辑后重启应用；② 环境变量 `OVA_SERVER_URL`（优先级最高）。
+> 地址变更会在下次启动 Agent 时自动写入 agent.yaml 的 `server.url`（保留注释，幂等）。
 
 ## 在线升级
 

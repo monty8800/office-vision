@@ -9,6 +9,10 @@ github_token: ""
 # 资产名模板：{os}=darwin|windows，两平台均为 zip（内含应用本体 + config.yaml）
 asset_pattern: "office-vision-tray-{os}.zip"
 
+# Office Vision Server 服务地址：启动 Agent 前自动同步到 agent.yaml 的 server.url
+# （Agent 配置以 YAML 为唯一源，本应用作为部署入口代为写入），可用 OVA_SERVER_URL 覆盖
+server_url: "http://localhost:8000"
+
 # 受管服务：仅本地 Agent（Server/Dashboard 运行在远程服务器）
 services:
   - name: agent

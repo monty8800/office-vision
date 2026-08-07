@@ -30,7 +30,9 @@ def main() -> None:
         base = exe.parent.parent.parent if sys.platform == "darwin" else exe.parent
         log_dir = base / "data" / "logs"
 
-    manager = ServiceManager(config.services, config.restart_delay_seconds, log_dir)
+    manager = ServiceManager(
+        config.services, config.restart_delay_seconds, log_dir, server_url=config.server_url
+    )
     TrayApp(config, manager).run()
 
 

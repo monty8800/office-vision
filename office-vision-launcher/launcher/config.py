@@ -26,6 +26,7 @@ class AppConfig:
     github_repo: str
     github_token: str
     asset_pattern: str
+    server_url: str
     services: list[ServiceSpec]
     restart_delay_seconds: float
     dashboard_url: str
@@ -73,6 +74,7 @@ def load_config() -> AppConfig:
         github_repo=os.environ.get("OVA_GITHUB_REPO", raw["github_repo"]),
         github_token=os.environ.get("OVA_GITHUB_TOKEN", raw.get("github_token") or ""),
         asset_pattern=raw["asset_pattern"],
+        server_url=os.environ.get("OVA_SERVER_URL", raw.get("server_url", "http://localhost:8000")),
         services=services,
         restart_delay_seconds=float(raw.get("restart_delay_seconds", 3)),
         dashboard_url=os.environ.get("OVA_DASHBOARD_URL", raw["dashboard_url"]),

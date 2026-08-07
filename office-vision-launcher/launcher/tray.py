@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 import webbrowser
 from enum import Enum, auto
@@ -10,7 +13,7 @@ import pystray
 from PIL import Image, ImageDraw
 
 from . import updater
-from .config import AppConfig
+from .config import AppConfig, config_path
 from .services import ServiceManager
 
 
@@ -66,6 +69,12 @@ class TrayApp:
                     self._toggle_service(name),
                 )
             )
+        items.append(
+            pystray.MenuItem(
+                lambda item: f"服务地址：{self.config.server_url}（点击修改）",
+                self._open_config_file,
+            )
+        )
         items.append(pystray.MenuItem("打开 Dashboard", self._open_dashboard))
         items.append(pystray.Menu.SEPARATOR)
         items.append(pystray.MenuItem(lambda item: self._update_title(), self._on_update_clicked))
@@ -96,6 +105,16 @@ class TrayApp:
 
     def _open_dashboard(self, _icon, _item) -> None:
         webbrowser.open(self.config.dashboard_url)
+
+    def _open_config_file(self, _icon, _item) -> None:
+        """打开 config.yaml 供用户修改服务地址等配置，保存后重启应用生效。"""
+        path = str(config_path())
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        elif sys.platform == "win32":
+            os.startfile(path)  # Windows 专属 API，以默认编辑器打开
+        else:
+            subprocess.Popen(["xdg-open", path])
 
     # ---- 升级 ----
 
