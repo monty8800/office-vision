@@ -1,36 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Office Vision Dashboard
 
-## Getting Started
+Office Vision AI 的 Next.js 16 仪表盘：今日统计、趋势分析、行为时间轴、配置页面、系统状态、插件管理。
 
-First, run the development server:
+## 边界
+
+- 纯展示层，只调用 Server 的 REST API，不直连 Agent、不直连数据库
+- 技术栈：Next.js 16（App Router）+ TypeScript + Tailwind + shadcn/ui + TanStack Query + Recharts（后续按需安装）
+
+## 开发
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 计划页面（阶段7迁移自原型 frontend/）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 首页概览：今日抽烟根数 / 累计时长 / 平均时长 / 在岗状态
+- 近 7 天趋势柱状图
+- 行为时间轴
+- 配置页面：Presence 参数（离开缓冲、自动休眠、恢复等待）
+- 系统状态：Agent 在线 / 摄像头 / 插件列表
