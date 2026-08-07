@@ -4,26 +4,31 @@ AI-powered Office Behavior Analysis Platform —— 基于 AI 视觉的办公室
 
 定位为个人行为统计、健康分析与办公自动化（Home Assistant 联动），而非员工监控。
 
-## 系统架构（三项目分离）
+## 系统架构（多项目分离）
 
 ```
-┌─────────────────────┐         HTTP API          ┌──────────────────────┐
-│ office-vision-agent │  ────── 事件上报 ───────► │ office-vision-server │
-│ （Mac / Pi / 跨平台）│   ◄──── 配置/状态 ──────  │ （本地或云服务器）    │
-│ 摄像头+AI识别+发事件 │   （离线时 SQLite 缓存）   │ FastAPI + PostgreSQL │
-└─────────────────────┘                           └──────────┬───────────┘
-                                                             │ REST API
-                                                  ┌──────────▼───────────┐
-                                                  │office-vision-dashboard│
-                                                  │     Next.js 16       │
-                                                  └──────────────────────┘
+┌─────────────────────────┐       HTTP API          ┌──────────────────────┐
+│ office-vision-launcher  │        托管进程          │ office-vision-server │
+│ （托盘应用，Agent 端）   │ ──────拉起/监控─────► │ （远程服务器）        │
+│ ┌─────────────────────┐ │                          │ FastAPI + PostgreSQL │
+│ │ office-vision-agent │ │ ──── 事件上报 ──────► │                      │
+│ │ 摄像头+AI识别+发事件 │ │  （离线时 SQLite 缓存） │                      │
+│ └─────────────────────┘ │                          └──────────┬───────────┘
+└─────────────────────────┘                                     │ REST API
+                                                     ┌──────────▼───────────┐
+                                                     │office-vision-dashboard│
+                                                     │     Next.js 16       │
+                                                     └──────────────────────┘
 ```
+
+部署形态：监控点电脑（Mac/Windows）只跑托盘应用 + Agent；Server 与 Dashboard 部署在远程服务器。
 
 | 项目 | 职责 | 禁止 |
 | --- | --- | --- |
 | `office-vision-agent/` | 摄像头采集、AI 视觉分析、行为识别、发布事件 | 数据库存储、Dashboard、用户管理、HA 控制 |
 | `office-vision-server/` | 事件处理、PostgreSQL、Dashboard API、自动化、AI 分析 | 接触摄像头、视觉推理 |
 | `office-vision-dashboard/` | 今日统计、趋势、配置、系统状态、插件管理 | 直连 Agent / 数据库 |
+| `office-vision-launcher/` | 托盘应用：托管 Agent 进程、崩溃自重启、服务地址配置、在线升级 | 业务逻辑、接触摄像头 |
 | `yolo-training/` | 自训练数据集：采集、标注、训练（产物部署回 Agent） | 运行时逻辑、接触三端代码 |
 
 ## 开发原则
@@ -55,9 +60,23 @@ AI-powered Office Behavior Analysis Platform —— 基于 AI 视觉的办公室
 Dashboard、事件记录、自动休眠、实时监控可视化。
 （不含喝水、玩手机等其他行为识别）
 
+## 跨平台打包与发布（RFC-0008）
+
+托盘应用通过 GitHub Actions 一次构建双平台，产物统一发布到 GitHub Releases：
+
+- 打包逻辑统一在 `office-vision-launcher/build/`（macos.sh / windows.ps1），
+  `.github/workflows/tray-release.yml` 仅负责调度
+- 产物：`OfficeVisionLauncher-macOS.dmg`、`OfficeVisionLauncher-Windows.exe`
+  及两平台自更新资产（zip）
+- 发版：`git tag vX.Y.Z && git push origin vX.Y.Z`，全自动无人工参与
+- 在线升级：托盘应用启动后检查 Releases，发现新版本自动下载、替换、重启
+- 路线图：Windows Setup.exe、PyInstaller → Nuitka、Linux 支持
+
 ## 项目结构
 
 单体原型（`backend/` / `frontend/` / `plugins/` / `configs/`）的代码已全部迁入
-三个新项目并清理移除；模型资产与下载脚本位于 `office-vision-agent/models/` 与
+各项目并清理移除；模型资产与下载脚本位于 `office-vision-agent/models/` 与
 `office-vision-agent/scripts/`。自训练数据集与训练脚本独立于 `yolo-training/` 项目
 （数据集、标注、训练产物 runs/，权重部署回 Agent）。
+本地开发可继续用 `scripts/service.sh`（tmux）编排三服务；部署到监控点电脑时使用
+`office-vision-launcher` 托盘应用（详见其 README）。

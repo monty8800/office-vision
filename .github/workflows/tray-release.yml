@@ -18,6 +18,11 @@ jobs:
           - os: windows-latest
             script: pwsh build/windows.ps1
     runs-on: ${{ matrix.os }}
+    env:
+      # 强制使用 uv 托管的 Python（python-build-standalone）：
+      # runner 预装的 python.org 框架构建与 PyInstaller 不兼容，
+      # 产物缺失 _struct 等标准库扩展，导致应用闪退
+      UV_PYTHON_PREFERENCE: only-managed
     defaults:
       run:
         working-directory: office-vision-launcher
