@@ -6,6 +6,4 @@ __pycache__/
 .ruff_cache/
 data/*.db
 logs/
-models/*.pt
-models/*.task
 .DS_Store

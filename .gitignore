@@ -7,8 +7,8 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
-# 模型权重（通过脚本下载）
-office-vision-agent/models/
+# 模型权重：基础模型随仓库分发（新设备部署不依赖境外下载），仅忽略下载临时文件
+office-vision-agent/models/*.tmp
 
 # YOLO 训练数据集与训练产物
 yolo-training/datasets/
