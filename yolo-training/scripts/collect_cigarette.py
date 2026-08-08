@@ -38,7 +38,7 @@ ANNOTATE_DIR = PROJECT_ROOT / "datasets" / "cigarette" / "annotate"
 
 
 def fetch_frame(base_url: str) -> bytes:
-    url = f"{base_url}/debug/raw.png"
+    url = f"{base_url}/monitor/raw.png"
     with urllib.request.urlopen(url, timeout=5) as resp:
         return resp.read()
 
@@ -84,7 +84,7 @@ def main() -> int:
     )
     parser.add_argument("--count", type=int, default=80, help="采集张数（默认 80）")
     parser.add_argument("--interval", type=float, default=0.5, help="采集间隔秒数（默认 0.5）")
-    parser.add_argument("--url", default="http://127.0.0.1:8100", help="Agent Debug 服务地址")
+    parser.add_argument("--url", default="http://127.0.0.1:8100", help="Agent 监控服务地址")
     parser.add_argument(
         "--camera", type=int, help="本地摄像头设备号（如 0），指定后优先于 --url 直采"
     )
