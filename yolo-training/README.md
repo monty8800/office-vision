@@ -3,6 +3,9 @@
 Office Vision 自训练数据集工程（独立于 agent/server/dashboard 三个运行时项目）。
 负责数据采集、标注、训练；产出的权重文件部署回 `office-vision-agent` 使用。
 
+> 分工约定：**所有训练在 Windows GPU 机器上进行**，Mac 仅消费 `weights/` 下的模型权重，
+> 不保留训练数据；训练数据通过私有仓库 `monty8800/office-vision-data` 同步。
+
 ## 目录结构
 
 ```
@@ -45,11 +48,13 @@ uv run python scripts/train_smoking.py
 ## 模型部署
 
 训练完成后，将 `runs/` 下对应任务的 `best.pt` 复制到 `weights/`（重命名为
-`cigarette-best.pt` / `smoking-cls-best.pt`），并配置到
-`office-vision-agent/config/agent.yaml`（如 `detector.cigarette_weights`），
-权重缺失时 Agent 自动降级。
+`cigarette-best.pt` / `smoking-cls-best.pt`），commit + push 后 Mac 侧拉取即生效
+（配置见 `office-vision-agent/config/agent.yaml` 的 `detector.cigarette_weights`，
+权重缺失时 Agent 自动降级）。
 
-> 注：`datasets/` 与 `runs/` 含私有训练数据，已在 .gitignore 中排除，仅 `weights/` 入库。
+> 注：`datasets/` 与 `runs/` 含私有训练数据，已在 .gitignore 中排除，仅 `weights/` 入库；
+> 标注数据统一托管于私有仓库 `monty8800/office-vision-data`（目录结构与本工程一致，
+> clone 后将 `annotate/` 拷入本工程对应位置即可）。
 
 ## 经验备忘
 
