@@ -21,6 +21,7 @@ class MonitorSettings:
     replay_snapshot_interval: float = 1.0
     frame_buffer_seconds: float = 30.0
     port: int = 8100
+    host: str = "127.0.0.1"  # 跨设备采集/调试时可在 agent.yaml 改为 0.0.0.0
     data_dir: str = "data/monitor"
 
     @classmethod

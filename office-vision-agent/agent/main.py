@@ -28,6 +28,7 @@ from agent.plugins.manager import PluginManager
 from agent.presence.manager import PresenceManager
 from agent.transport.heartbeat import HeartbeatTask
 from agent.transport.http_publisher import HttpPublisher
+from agent.transport.log_uploader import LogUploader
 from agent.transport.offline_store import OfflineStore
 from agent.transport.pusher import EventPusher
 from agent.vision.camera.base import create_camera
@@ -55,7 +56,7 @@ async def _serve_monitor(hub: MonitorHub) -> None:
     server = uvicorn.Server(
         uvicorn.Config(
             create_monitor_app(hub),
-            host="127.0.0.1",
+            host=hub.settings.host,
             port=hub.settings.port,
             log_level="warning",
         )
@@ -100,6 +101,21 @@ async def _run(config: AgentConfig) -> None:
         bus, config.agent.device_id, config.server.heartbeat_interval_seconds
     )
 
+    # ---- 日志上传（定时 + ERROR 触发，排查客户端问题用） ----
+    uploader: LogUploader | None = None
+    if config.logging.upload_enabled:
+        uploader = LogUploader(
+            config.server.url,
+            config.agent.device_id,
+            PROJECT_ROOT / config.logging.file,
+            PROJECT_ROOT / "data" / "log_upload_state.json",
+            interval_seconds=config.logging.upload_interval_seconds,
+            error_debounce_seconds=config.logging.error_debounce_seconds,
+            max_chunk_bytes=config.logging.max_chunk_bytes,
+        )
+        if config.logging.error_trigger:
+            logger.add(uploader.notify_error, level="ERROR")
+
     # ---- 启动（监控服务先于摄像头：便于诊断硬件/权限问题） ----
     await pusher.start()
 
@@ -112,6 +128,8 @@ async def _run(config: AgentConfig) -> None:
         asyncio.create_task(pusher.run(), name="pusher"),
         asyncio.create_task(heartbeat.run(), name="heartbeat"),  # 摄像头失败也保持心跳
     ]
+    if uploader:
+        tasks.append(asyncio.create_task(uploader.run(), name="log-uploader"))
     if monitor_hub:
         tasks.append(asyncio.create_task(_serve_monitor(monitor_hub), name="monitor-http"))
 
@@ -128,12 +146,20 @@ async def _run(config: AgentConfig) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
     pipeline.shutdown()
     await pusher.stop()
+    if uploader:
+        await uploader.stop()
     logger.info("Agent 已退出")
 
 
 def main() -> None:
     config = load_config()
-    setup_logging(config.agent.log_level)
+    log_file = PROJECT_ROOT / config.logging.file if config.logging.file else None
+    setup_logging(
+        config.agent.log_level,
+        log_file=log_file,
+        rotation=config.logging.rotation,
+        retention=config.logging.retention,
+    )
     try:
         asyncio.run(_run(config))
     except KeyboardInterrupt:
