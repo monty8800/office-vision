@@ -47,6 +47,17 @@ server:
 plugins:
   dir: "plugins"                 # 行为检测插件目录
 
+# 日志落盘与上传：增量上报到 Server（POST /api/logs），方便远程排查客户端问题
+logging:
+  file: "data/logs/agent.log"    # 落盘路径（Loguru 自动轮转）
+  rotation: "10 MB"
+  retention: 5                   # Loguru 兜底保留数（上传成功即删，正常不会堆积到兜底值）
+  upload_enabled: true
+  upload_interval_seconds: 300   # 定时上传间隔
+  error_trigger: true            # ERROR 级日志立即触发上传
+  error_debounce_seconds: 30     # 错误触发防抖（避免错误风暴刷爆上传）
+  max_chunk_bytes: 262144        # 单次上传最大 256KB
+
 # 实时监控中心：仅开发模式启用，发布版 enabled=false
 monitor:
   enabled: true
@@ -60,3 +71,4 @@ monitor:
   save_snapshot: true            # 一键截图（图片 + Overlay + 状态）
   frame_buffer_seconds: 30       # 帧环形缓冲时长（供 Replay 取前段）
   port: 8100                     # Agent 内置监控 HTTP 服务端口
+  host: 0.0.0.0                  # 监听局域网，供 Windows 训练机跨设备采集帧（默认 127.0.0.1）

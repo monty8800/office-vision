@@ -47,6 +47,20 @@ class PluginsSection:
 
 
 @dataclass(frozen=True)
+class LoggingSection:
+    """日志落盘与上传；上传成功即删轮转文件，retention 仅作兜底。"""
+
+    file: str = "data/logs/agent.log"
+    rotation: str = "10 MB"
+    retention: int = 5
+    upload_enabled: bool = True
+    upload_interval_seconds: float = 300.0
+    error_trigger: bool = True
+    error_debounce_seconds: float = 30.0
+    max_chunk_bytes: int = 262144
+
+
+@dataclass(frozen=True)
 class AgentConfig:
     """全部配置的聚合视图。"""
 
@@ -58,6 +72,7 @@ class AgentConfig:
     presence: PresenceSettings = field(default_factory=PresenceSettings)
     server: ServerSection = field(default_factory=ServerSection)
     plugins: PluginsSection = field(default_factory=PluginsSection)
+    logging: LoggingSection = field(default_factory=LoggingSection)
     monitor: MonitorSettings = field(default_factory=MonitorSettings)
 
     @property
@@ -106,5 +121,6 @@ def load_config(path: str | Path | None = None) -> AgentConfig:
         presence=_typed(PresenceSettings, _section(raw, "presence")),
         server=_typed(ServerSection, _section(raw, "server")),
         plugins=_typed(PluginsSection, _section(raw, "plugins")),
+        logging=_typed(LoggingSection, _section(raw, "logging")),
         monitor=_typed(MonitorSettings, _section(raw, "monitor") or _section(raw, "debug")),
     )
