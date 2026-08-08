@@ -122,7 +122,11 @@ async def _run(config: AgentConfig) -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            # Windows 事件循环不支持 add_signal_handler，退回 signal.signal
+            signal.signal(sig, lambda s, f: loop.call_soon_threadsafe(stop.set))
 
     tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(pusher.run(), name="pusher"),
