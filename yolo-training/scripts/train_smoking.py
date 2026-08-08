@@ -4,7 +4,9 @@
     uv run python scripts/train_smoking.py                 # 默认 50 epochs
     uv run python scripts/train_smoking.py --epochs 100    # 自定义轮数
     uv run python scripts/train_smoking.py --resume        # 恢复上次训练
+    uv run python scripts/train_smoking.py --device cuda   # 指定设备（Windows NVIDIA 显卡）
 
+设备选择: 默认自动检测（NVIDIA CUDA > Apple MPS > CPU）。
 产物: runs/classify/smoking/weights/best.pt
 训练前请确认 dataset/ 已整理好（见 datasets/smoking/README.md）。
 """
@@ -20,6 +22,19 @@ DATASET_DIR = PROJECT_ROOT / "datasets" / "smoking" / "dataset"
 
 CLASSES = ("normal", "smoking")
 SPLITS = ("train", "val")
+
+
+def resolve_device(requested: str | None) -> str:
+    """解析训练设备：显式指定优先，否则自动检测 CUDA > MPS > CPU。"""
+    if requested:
+        return requested
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def validate_dataset() -> dict[str, int]:
@@ -49,6 +64,7 @@ def main() -> int:
     parser.add_argument("--imgsz", type=int, default=224, help="输入尺寸（默认 224）")
     parser.add_argument("--batch", type=int, default=32, help="批大小（默认 32）")
     parser.add_argument("--resume", action="store_true", help="从上次中断处恢复训练")
+    parser.add_argument("--device", help="训练设备，如 cuda / 0 / mps / cpu（默认自动检测）")
     args = parser.parse_args()
 
     print("校验数据集:")
@@ -65,13 +81,14 @@ def main() -> int:
     else:
         model = YOLO("yolo11n-cls.pt")  # 官方分类预训练权重，首次自动下载
 
-    print(f"开始训练（device=mps / epochs={args.epochs} / imgsz={args.imgsz}）")
+    device = resolve_device(args.device)
+    print(f"开始训练（device={device} / epochs={args.epochs} / imgsz={args.imgsz}）")
     model.train(
         data=str(DATASET_DIR),
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
-        device="mps",  # Apple Silicon GPU 加速
+        device=device,  # CUDA（NVIDIA）/ MPS（Apple）/ CPU，自动检测
         project=str(PROJECT_ROOT / "runs" / "classify"),
         name="smoking",
         exist_ok=True,

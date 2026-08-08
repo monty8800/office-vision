@@ -5,6 +5,9 @@
     uv run python scripts/train_cigarette.py --epochs 150    # 自定义轮数
     uv run python scripts/train_cigarette.py --resume        # 恢复上次训练
     uv run python scripts/train_cigarette.py --finetune      # 追加数据后从 best.pt 继续微调
+    uv run python scripts/train_cigarette.py --device cuda   # 指定设备（Windows NVIDIA 显卡）
+
+设备选择: 默认自动检测（NVIDIA CUDA > Apple MPS > CPU）。
 
 前置步骤:
     1. labelme 完成标注（见 datasets/cigarette/README.md）
@@ -25,6 +28,19 @@ DATA_YAML = DATASET_DIR / "data.yaml"
 
 MIN_TRAIN_IMAGES = 100  # 低于该数量训练意义不大
 BEST_PT = PROJECT_ROOT / "runs" / "detect" / "cigarette" / "weights" / "best.pt"
+
+
+def resolve_device(requested: str | None) -> str:
+    """解析训练设备：显式指定优先，否则自动检测 CUDA > MPS > CPU。"""
+    if requested:
+        return requested
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def validate_dataset() -> None:
@@ -56,6 +72,7 @@ def main() -> int:
         help="从已有 best.pt 继续微调（追加数据集后推荐，收敛更快）",
     )
     parser.add_argument("--weights", help="自定义初始权重路径（优先级高于 --finetune）")
+    parser.add_argument("--device", help="训练设备，如 cuda / 0 / mps / cpu（默认自动检测）")
     args = parser.parse_args()
 
     if args.finetune and args.resume:
@@ -91,13 +108,14 @@ def main() -> int:
             print("提示: 已存在 best.pt，追加数据后可加 --finetune 从已有权重继续微调")
         model = YOLO("yolo11n.pt")  # 官方检测预训练权重，首次自动下载
 
-    print(f"开始训练（device=mps / epochs={args.epochs} / imgsz={args.imgsz}）")
+    device = resolve_device(args.device)
+    print(f"开始训练（device={device} / epochs={args.epochs} / imgsz={args.imgsz}）")
     model.train(
         data=str(DATA_YAML),
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
-        device="mps",  # Apple Silicon GPU 加速
+        device=device,  # CUDA（NVIDIA）/ MPS（Apple）/ CPU，自动检测
         patience=30,  # 早停：30 轮无提升即止
         project=str(PROJECT_ROOT / "runs" / "detect"),
         name="cigarette",
