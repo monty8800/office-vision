@@ -36,6 +36,9 @@ yolo-training/
 # 采集（需 Agent 在 :8100 运行）
 uv run python scripts/collect_dataset.py --label smoking --count 100
 
+# 智能自动预标注（用已训练香烟模型批量生成初步标注，人只纠错，大幅减少手工画框）
+uv run python scripts/auto_annotate.py --images datasets/cigarette/annotate/smoking
+
 # 标注（labelme 已全局安装）
 labelme datasets/cigarette/annotate --labels cigarette
 
@@ -60,4 +63,6 @@ uv run python scripts/train_smoking.py
 
 - 分类数据务必覆盖各姿态（曾因 smoking 全抬头、normal 全低头导致捷径学习误判）
 - 香烟是极小目标：imgsz=640，框宁大勿漏
+- **智能标注降低人工成本**：`scripts/auto_annotate.py` 用现有 `cigarette-best.pt` 自动预标注新帧（labelme JSON，与 `labelme2yolo.py` 的 `with_suffix(".json")` 命名一致），人只纠错——比逐张画框省大量时间。**应采集的优先级**：难负样本（Pencil/手表/耳/首饰等被误检为香烟）+ 复现漏检的真实姿态（侧/背角度、远近交替、旋转香烟），这比重复加水印式同场景更能提精度。
+- 若仍要进一步提升：可试更大模型（YOLO11s/m）、把 `smoking-cls` 分类模型接入 agent 作确认通道（目前 agent 只用香烟检测+手势融合）。
 - `metrics.top1` 等指标是 0-1 比例，打印时记得 ×100
