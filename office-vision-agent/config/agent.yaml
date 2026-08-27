@@ -22,6 +22,9 @@ detector:
   # 自训练香烟检测（yolo-training 项目产出）；权重缺失时自动降级为仅人形检测
   cigarette_weights: "../yolo-training/weights/cigarette-best.pt"
   cigarette_confidence: 0.25     # 香烟是小目标，阈值低于人形检测
+  # 自训练 smoking 行为分类（YOLO-cls）；作为第三重确认通道抑制香烟误检，缺失则降级
+  smoking_cls_weights: "../yolo-training/weights/smoking-cls-best.pt"
+  smoking_cls_confidence: 0.6    # 判定为 smoking 的最小分类置信度
 
 pose:
   type: "mediapipe"              # 姿态特征提取器（可替换）

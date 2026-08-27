@@ -299,3 +299,72 @@ class TestCigaretteFusion:
             events.extend(machine.update(_hit(300.0), BASE + i * 0.5, cigarette_visible=True))
         assert [type(e) for e in events] == [SmokingStarted]
         assert machine.state is SmokingState.SMOKING
+
+
+class TestClassifierGate:
+    """行为分类确认通道：开启后香烟通道需额外满足 smoking-cls 投票，降低误检。"""
+
+    def test_分类器未开启_不影响原通道(self) -> None:
+        machine = _make_machine(classifier_confirm_frames=0)
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(machine.update(signal, BASE + i * 0.5, cigarette_visible=True))
+        assert [type(e) for e in events] == [SmokingStarted]
+
+    def test_开启_无smoking票_不确认(self) -> None:
+        """笔/手表误检场景：香烟+手势齐备，但整帧分类不是 smoking → 阻断。"""
+        machine = _make_machine(classifier_confirm_frames=1)
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(
+                machine.update(
+                    signal, BASE + i * 0.5, cigarette_visible=True, smoking_cls="normal", smoking_cls_conf=0.9
+                )
+            )
+        assert events == []
+        assert machine.state is SmokingState.IDLE
+
+    def test_开启_有smoking票_确认(self) -> None:
+        machine = _make_machine(classifier_confirm_frames=1)
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(
+                machine.update(
+                    signal, BASE + i * 0.5, cigarette_visible=True, smoking_cls="smoking", smoking_cls_conf=0.9
+                )
+            )
+        assert [type(e) for e in events] == [SmokingStarted]
+        assert machine.state is SmokingState.SMOKING
+
+    def test_smoking票不足_不确认(self) -> None:
+        machine = _make_machine(classifier_confirm_frames=2)
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(
+                machine.update(
+                    signal,
+                    BASE + i * 0.5,
+                    cigarette_visible=True,
+                    smoking_cls="smoking" if i == 0 else "normal",
+                    smoking_cls_conf=0.9,
+                )
+            )
+        assert events == []
+        assert machine.state is SmokingState.IDLE
+
+    def test_分类置信度不足_不计票(self) -> None:
+        machine = _make_machine(classifier_confirm_frames=1, classifier_min_conf=0.6)
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(
+                machine.update(
+                    signal, BASE + i * 0.5, cigarette_visible=True, smoking_cls="smoking", smoking_cls_conf=0.3
+                )
+            )
+        assert events == []
+        assert machine.state is SmokingState.IDLE

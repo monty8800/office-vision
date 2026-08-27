@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import replace
 
 from loguru import logger
 
@@ -108,6 +109,12 @@ class VisionPipeline:
             detections=detections,
             pose=self._pose.analyze(frame),
         )
+        # 行为分类（可选 AI 模块）：检测器支持时注入，供 smoking 插件作为确认通道。
+        # 仅完整管线（有人）时执行，避免休眠/无人时的额外开销。
+        if hasattr(self._detector, "classify_smoking"):
+            cls = self._detector.classify_smoking(frame)
+            if cls is not None:
+                context = replace(context, smoking_cls=cls[0], smoking_cls_conf=cls[1])
         self._tap(context)
         for event in self._plugins.process_frame(context):
             await self._bus.publish(event)

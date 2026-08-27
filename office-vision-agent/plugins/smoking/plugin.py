@@ -43,7 +43,14 @@ class SmokingDetector(BaseBehaviorDetector):
         # 自训练香烟检测框作为强证据（无模型时 detections 里永远不会有 cigarette）
         cigarette_visible = any(d.label == "cigarette" for d in context.detections)
         self._last_cigarette_visible = cigarette_visible
-        return self._machine.update(signal, context.frame.timestamp, cigarette_visible)
+        # 行为分类作为第三重确认通道（smoking-cls），降低香烟误检
+        return self._machine.update(
+            signal,
+            context.frame.timestamp,
+            cigarette_visible,
+            context.smoking_cls,
+            context.smoking_cls_conf,
+        )
 
     def monitor_info(self) -> dict[str, Any]:
         info = self._machine.monitor_info(self._last_timestamp)

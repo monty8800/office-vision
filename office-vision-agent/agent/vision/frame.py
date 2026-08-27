@@ -110,6 +110,10 @@ class VisionContext:
     frame: Frame
     detections: list[Detection] = field(default_factory=list)
     pose: PoseFeatures = field(default_factory=PoseFeatures)
+    # 行为分类（如 smoking/normal）：可选 AI 模块产出，无模型时为 None/0.0。
+    # 供 smoking 插件作为第三重确认通道（降低误检）。
+    smoking_cls: str | None = None
+    smoking_cls_conf: float = 0.0
 
     @property
     def has_person(self) -> bool:

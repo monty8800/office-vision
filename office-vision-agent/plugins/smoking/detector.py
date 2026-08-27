@@ -61,6 +61,9 @@ class SmokingConfig:
     cigarette_min_suspect_seconds: float = 1.0
     cigarette_memory_seconds: float = 3.0  # 检出后多久内视为有效证据
     cigarette_min_gesture_frames: int = 1  # 独立通道所需的最少食指近嘴帧数（防误检）
+    # --- 行为分类确认通道（smoking-cls，抑制香烟误检）---
+    classifier_confirm_frames: int = 0  # 窗口内分类为 smoking 的最少帧数（0=关闭该通道）
+    classifier_min_conf: float = 0.6  # 判定为 smoking 所需的最小分类置信度
 
 
 class SmokingState(StrEnum):
@@ -142,6 +145,8 @@ class SmokingSessionMachine:
         self._cig_times: list[float] = []
         # 手势佐证：窗口内食指近嘴的时刻序列（独立通道防误检用）
         self._gesture_times: list[float] = []
+        # 行为分类确认：窗口内分类为 smoking 的时刻序列（抑制香烟误检）
+        self._cls_times: list[float] = []
 
     @property
     def state(self) -> SmokingState:
@@ -169,6 +174,7 @@ class SmokingSessionMachine:
             ),
             "cigarette_hits_recent": len(self._cig_times),
             "gesture_frames_recent": len(self._gesture_times),
+            "classification_frames_recent": len(self._cls_times),
         }
 
     def reset(self) -> None:
@@ -183,9 +189,15 @@ class SmokingSessionMachine:
         self._last_cigarette_seen = None
         self._cig_times = []
         self._gesture_times = []
+        self._cls_times = []
 
     def update(
-        self, signal: SmokingSignal, timestamp: float, cigarette_visible: bool = False
+        self,
+        signal: SmokingSignal,
+        timestamp: float,
+        cigarette_visible: bool = False,
+        smoking_cls: str | None = None,
+        smoking_cls_conf: float = 0.0,
     ) -> list[Event]:
         events: list[Event] = []
         if cigarette_visible:
@@ -198,6 +210,10 @@ class SmokingSessionMachine:
             self._gesture_times.append(timestamp)
         while self._gesture_times and timestamp - self._gesture_times[0] > window:
             self._gesture_times.pop(0)
+        if smoking_cls == "smoking" and smoking_cls_conf >= self._config.classifier_min_conf:
+            self._cls_times.append(timestamp)
+        while self._cls_times and timestamp - self._cls_times[0] > window:
+            self._cls_times.pop(0)
 
         # 超时收尾：手势与香烟均无证据才算沉寂（即使本帧命中也先判断，保证时间轴严格）
         cig_active = (
@@ -212,13 +228,14 @@ class SmokingSessionMachine:
             if ended is not None:
                 events.append(ended)
 
-        # 香烟独立通道：窗口内检出达标 + 最低手势佐证（防笔/手表/五官误检）
+        # 香烟独立通道：窗口内检出达标 + 最低手势佐证 + 行为分类闸门（抑制误检）
         if (
             cigarette_visible
             and self._state is not SmokingState.SMOKING
             and len(self._cig_times) >= self._config.cigarette_confirm_frames
             and timestamp - self._cig_times[0] >= self._config.cigarette_min_seconds
             and len(self._gesture_times) >= self._config.cigarette_min_gesture_frames
+            and self._classifier_gate_ok()
         ):
             self._state = SmokingState.SMOKING
             if self._session_start <= 0.0:
@@ -262,6 +279,18 @@ class SmokingSessionMachine:
         if self._last_cigarette_seen is None:
             return False
         return timestamp - self._last_cigarette_seen <= self._config.cigarette_memory_seconds
+
+    def _classifier_gate_ok(self) -> bool:
+        """行为分类确认闸门：开启时要求窗口内分类为 smoking 的帧数达标。
+
+        关闭（classifier_confirm_frames<=0）时恒通过，不影响原逻辑；
+        开启时需 smoking-cls 在窗口内至少投出 classifier_confirm_frames 次"smoking"票，
+        以减少"笔/手表/五官被误检为香烟"造成的虚警。
+        """
+        n = self._config.classifier_confirm_frames
+        if n <= 0:
+            return True
+        return len(self._cls_times) >= n
 
     def _ready_to_confirm(self, timestamp: float) -> bool:
         """进入 Smoking 的三重条件：命中数 + 持续时长 + 往返运动。
