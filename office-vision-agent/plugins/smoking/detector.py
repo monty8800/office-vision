@@ -119,32 +119,50 @@ def evaluate_cigarette(
 ) -> CigaretteSignal:
     """判定香烟是否「在嘴里」或「在手上」；都不是则视为画面里但未抽（桌上香烟）。
 
-    在嘴里只依赖嘴部信息（脸上叼着烟即算，不要求手可见）；在手上需"近嘴的手"。
+    放宽判据以适应用户规则（烟在手上/嘴里 = 抽烟）：
+    - 在嘴里：烟框与嘴部框重叠，或框中心落入放大的嘴部区（容忍烟伸出嘴边/框偏大）
+    - 在手上：烟框中心靠近任意检测到手的关键点（不再强求"手必须近嘴"，
+      避免 MediaPipe 手势因角度/遮挡判不到而误阻断）
     """
     if not cig_boxes:
         return CigaretteSignal(visible=False)
     visible = True
-    if pose.mouth_box is None:
-        # 无人脸：无嘴部可锁定，保守视为"在手上的送嘴"待定（交给手势通道）
-        return CigaretteSignal(visible=visible)
-    region = pose.mouth_box.expand(config.mouth_region_expand)
-    in_mouth = any(region.contains(*_box_center(b)) for b in cig_boxes)
-    mouth_size = max(pose.mouth_box.width, pose.mouth_box.height)
+    in_mouth = False
     in_hand = False
-    for hand in pose.hands:
-        if not region.contains(*hand.index_tip):
-            continue  # 这只手不在嘴旁，不可能是"夹烟送嘴"
-        hand_pts = (hand.wrist, hand.index_tip, hand.thumb_tip)
+    if pose.mouth_box is not None:
+        region = pose.mouth_box.expand(config.mouth_region_expand * 1.6)
+        mouth_size = max(pose.mouth_box.width, pose.mouth_box.height)
         for b in cig_boxes:
-            if any(
-                _distance(_box_center(b), p) < mouth_size * config.cig_in_hand_proximity
-                for p in hand_pts
-            ):
-                in_hand = True
+            if _box_overlaps(b, pose.mouth_box) or region.contains(*_box_center(b)):
+                in_mouth = True
                 break
-        if in_hand:
-            break
+        for hand in pose.hands:
+            hand_pts = (hand.wrist, hand.index_tip, hand.thumb_tip, hand.middle_tip)
+            for b in cig_boxes:
+                if any(
+                    _distance(_box_center(b), p) < mouth_size * config.cig_in_hand_proximity
+                    for p in hand_pts
+                ):
+                    in_hand = True
+                    break
+            if in_hand:
+                break
+    elif pose.hands:
+        # 无嘴部（无脸）时仍可判"在手上"；用固定基准尺估距离
+        for hand in pose.hands:
+            hand_pts = (hand.wrist, hand.index_tip, hand.thumb_tip, hand.middle_tip)
+            for b in cig_boxes:
+                if any(_distance(_box_center(b), p) < 80.0 for p in hand_pts):
+                    in_hand = True
+                    break
+            if in_hand:
+                break
     return CigaretteSignal(visible=visible, in_mouth=in_mouth, in_hand=in_hand)
+
+
+def _box_overlaps(a: Box, b: Box) -> bool:
+    """两个框是否相交。"""
+    return not (a.x2 < b.x1 or b.x2 < a.x1 or a.y2 < b.y1 or b.y2 < a.y1)
 
 
 def evaluate_frame(pose: PoseFeatures, config: SmokingConfig) -> SmokingSignal:
