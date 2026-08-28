@@ -68,28 +68,36 @@ export function OverlayControls({
 export function ReplayPanel({
   api,
   replays,
-  onVerdict,
+  onFrameVerdict,
 }: {
   api: MonitorApi;
   replays: ReplayMeta[];
-  onVerdict?: (eventId: string, verdict: "correct" | "wrong") => void;
+  onFrameVerdict?: (eventId: string, frame: string, verdict: "correct" | "wrong") => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // 灯箱：当前查看的截图下标（null=关闭）
+  const [viewIdx, setViewIdx] = useState<number | null>(null);
   const selectedReplay = replays.find((r) => r.event_id === selected) ?? null;
+  const snaps = selectedReplay?.snapshots ?? [];
+  const fv = selectedReplay?.frame_verdicts ?? {};
+  const n = snaps.length;
+  const currFrame = viewIdx != null ? snaps[viewIdx] : null;
+  const currVerdict = currFrame ? fv[currFrame] : undefined;
 
-  const mark = async (eventId: string, verdict: "correct" | "wrong") => {
-    setBusy(eventId);
+  const mark = async (frame: string, verdict: "correct" | "wrong") => {
+    if (!selectedReplay || !frame) return;
+    setBusy(frame);
     setMsg(null);
     try {
-      const res = await api.markEvent(eventId, verdict);
-      onVerdict?.(eventId, verdict);
+      const res = await api.markFrame(selectedReplay.event_id, frame, verdict);
+      onFrameVerdict?.(selectedReplay.event_id, frame, verdict);
       const exported = Number(res.exported_negatives ?? 0);
       setMsg(
         verdict === "wrong"
-          ? `已标记为误判${exported > 0 ? `，导出 ${exported} 帧到训练负样本` : ""}`
-          : "已标记为正常抽烟"
+          ? `已标记为误判${exported > 0 ? "，导出该帧到训练负样本" : ""}`
+          : "已标记为有烟（正常）"
       );
     } catch (e) {
       setMsg(`标记失败：${e instanceof Error ? e.message : String(e)}`);
@@ -98,100 +106,193 @@ export function ReplayPanel({
     }
   };
 
-  // verdict 徽标
-  const verdictBadge = (verdict: ReplayMeta["verdict"]) => {
+  const go = (dir: number) =>
+    setViewIdx((i) => (i == null ? null : (i + dir + n) % n));
+
+  // 键盘：←/→ 切换，Esc 关闭
+  useEffect(() => {
+    if (viewIdx == null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setViewIdx(null);
+      else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        go(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        go(1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewIdx, n]);
+
+  // 缩略图角标：误判红 / 有烟绿
+  const frameBadge = (verdict?: string) => {
     if (verdict === "wrong")
-      return <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">误判</span>;
+      return (
+        <span className="absolute right-1 top-1 rounded bg-red-500/85 px-1 py-0.5 text-[9px] font-medium text-white">
+          误判
+        </span>
+      );
     if (verdict === "correct")
-      return <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">正常</span>;
-    return <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-500">未标记</span>;
+      return (
+        <span className="absolute right-1 top-1 rounded bg-emerald-500/85 px-1 py-0.5 text-[9px] font-medium text-white">
+          有烟
+        </span>
+      );
+    return null;
   };
 
+  // 已标记帧数汇总（列表行展示）
+  const markedCount = (replay: ReplayMeta) =>
+    Object.values(replay.frame_verdicts ?? {}).length;
+
   return (
-    <Card title="事件回放（事件前 10s + 过程 + 后 10s · 截图模式）">
-      {replays.length === 0 ? (
-        <EmptyState text="暂无回放（触发开始抽烟/抽烟结束事件后自动生成）" />
-      ) : (
-        <div className="space-y-2">
-          {msg && <p className="rounded bg-zinc-800 px-2 py-1 text-xs text-emerald-300">{msg}</p>}
-          {selectedReplay ? (
-            selectedReplay.snapshots && selectedReplay.snapshots.length > 0 ? (
-              <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-zinc-800 p-1.5">
-                {selectedReplay.snapshots.map((name) => (
-                  <img
-                    key={name}
-                    src={api.replaySnapshotUrl(selectedReplay.event_id, name)}
-                    alt={`${selectedReplay.event_type} ${name}`}
-                    className="w-full rounded border border-zinc-800/60"
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState text="该回放无截图（旧版视频回放不再支持播放）" />
-            )
-          ) : null}
-          <ul className="max-h-40 space-y-1.5 overflow-y-auto">
-            {replays.map((replay) => (
-              <li
-                key={replay.event_id}
-                className={`rounded-md ${
-                  selected === replay.event_id ? "bg-emerald-500/15" : "bg-zinc-800/60"
+    <>
+      <Card title="事件回放（事件前 10s + 过程 + 后 10s · 截图模式）">
+        {replays.length === 0 ? (
+          <EmptyState text="暂无回放（触发开始抽烟/抽烟结束事件后自动生成）" />
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[10px] text-zinc-600">
+              提示：双击截图可查看大图并标记（方向键切换 / Esc 关闭）
+            </p>
+            {msg && <p className="rounded bg-zinc-800 px-2 py-1 text-xs text-emerald-300">{msg}</p>}
+            {selectedReplay ? (
+              selectedReplay.snapshots && selectedReplay.snapshots.length > 0 ? (
+                <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-zinc-800 p-1.5">
+                  {selectedReplay.snapshots.map((name, idx) => (
+                    <div key={name} className="relative">
+                      <img
+                        src={api.replaySnapshotUrl(selectedReplay.event_id, name)}
+                        alt={`${selectedReplay.event_type} ${name}`}
+                        onDoubleClick={() => setViewIdx(idx)}
+                        className="w-full cursor-zoom-in rounded border border-zinc-800/60 transition hover:border-emerald-400/60"
+                      />
+                      {frameBadge(fv[name])}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState text="该回放无截图（旧版视频回放不再支持播放）" />
+              )
+            ) : null}
+            <ul className="max-h-40 space-y-1.5 overflow-y-auto">
+              {replays.map((replay) => (
+                <li
+                  key={replay.event_id}
+                  className={`flex items-center justify-between rounded-md px-3 py-1.5 text-xs ${
+                    selected === replay.event_id ? "bg-emerald-500/15 text-emerald-300" : "bg-zinc-800/60"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelected(replay.event_id)}
+                    className="flex w-full items-center justify-between text-left"
+                  >
+                    <span className="flex items-center gap-2">
+                      {eventLabel(replay.event_type)}
+                      <span className="text-zinc-500">
+                        {replay.snapshots ? `${replay.snapshots.length} 张截图` : `${replay.frame_count} 帧`}
+                        {markedCount(replay) > 0 && (
+                          <span className="ml-1 text-emerald-400/80">· 已标记 {markedCount(replay)}</span>
+                        )}
+                      </span>
+                    </span>
+                    <span className="tabular-nums text-zinc-500">
+                      {new Date(replay.occurred_at).toLocaleTimeString("zh-CN", {
+                        hour12: false,
+                      })}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Card>
+
+      {/* 大图灯箱（可标记当前图片） */}
+      {viewIdx !== null && selectedReplay && currFrame ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setViewIdx(null)}
+        >
+          <button
+            type="button"
+            aria-label="关闭"
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewIdx(null);
+            }}
+            className="absolute right-4 top-4 z-10 rounded-full bg-zinc-800/80 px-3 py-1 text-lg text-zinc-300 hover:bg-zinc-700 hover:text-white"
+          >
+            ✕
+          </button>
+          <button
+            type="button"
+            aria-label="上一张"
+            onClick={(e) => {
+              e.stopPropagation();
+              go(-1);
+            }}
+            className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/80 px-3 py-2 text-2xl text-zinc-200 hover:bg-zinc-700 hover:text-white"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="下一张"
+            onClick={(e) => {
+              e.stopPropagation();
+              go(1);
+            }}
+            className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/80 px-3 py-2 text-2xl text-zinc-200 hover:bg-zinc-700 hover:text-white"
+          >
+            ›
+          </button>
+          <div className="relative max-h-[92vh] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={api.replaySnapshotUrl(selectedReplay.event_id, currFrame)}
+              alt={`${selectedReplay.event_type} ${currFrame}`}
+              className="max-h-[82vh] max-w-[90vw] rounded object-contain shadow-2xl"
+            />
+            <div className="mt-2 flex items-center justify-center gap-2 text-sm">
+              <span className="tabular-nums text-zinc-300">
+                {viewIdx + 1} / {n}
+              </span>
+              <span className="mx-2 h-3 w-px bg-zinc-700" />
+              <span className="text-xs text-zinc-400">标记：</span>
+              <button
+                type="button"
+                disabled={busy === currFrame}
+                onClick={() => mark(currFrame, "wrong")}
+                className={`rounded px-2 py-0.5 text-xs transition-colors disabled:opacity-50 ${
+                  currVerdict === "wrong"
+                    ? "bg-red-500/30 text-red-200"
+                    : "bg-zinc-800 text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => setSelected(replay.event_id)}
-                  className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-xs hover:bg-zinc-800"
-                >
-                  <span className="flex items-center gap-2">
-                    {eventLabel(replay.event_type)}
-                    <span className="text-zinc-500">
-                      {replay.snapshots ? `${replay.snapshots.length} 张截图` : `${replay.frame_count} 帧`}
-                    </span>
-                    {verdictBadge(replay.verdict)}
-                  </span>
-                  <span className="tabular-nums text-zinc-500">
-                    {new Date(replay.occurred_at).toLocaleTimeString("zh-CN", {
-                      hour12: false,
-                    })}
-                  </span>
-                </button>
-                {/* 仅"开始抽烟"事件可标记误判/正常 */}
-                {replay.event_type === "SmokingStarted" ? (
-                  <div className="flex items-center gap-1.5 px-3 pb-1.5">
-                    <span className="text-[10px] text-zinc-600">标记：</span>
-                    <button
-                      type="button"
-                      disabled={busy === replay.event_id}
-                      onClick={() => mark(replay.event_id, "wrong")}
-                      className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
-                        replay.verdict === "wrong"
-                          ? "bg-red-500/30 text-red-200"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
-                      }`}
-                    >
-                      误判
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy === replay.event_id}
-                      onClick={() => mark(replay.event_id, "correct")}
-                      className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
-                        replay.verdict === "correct"
-                          ? "bg-emerald-500/30 text-emerald-200"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-emerald-500/20 hover:text-emerald-300"
-                      }`}
-                    >
-                      正常
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+                误判
+              </button>
+              <button
+                type="button"
+                disabled={busy === currFrame}
+                onClick={() => mark(currFrame, "correct")}
+                className={`rounded px-2 py-0.5 text-xs transition-colors disabled:opacity-50 ${
+                  currVerdict === "correct"
+                    ? "bg-emerald-500/30 text-emerald-200"
+                    : "bg-zinc-800 text-zinc-400 hover:bg-emerald-500/20 hover:text-emerald-300"
+                }`}
+              >
+                有烟
+              </button>
+            </div>
+          </div>
         </div>
-      )}
-    </Card>
+      ) : null}
+    </>
   );
 }
 

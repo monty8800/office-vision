@@ -34,10 +34,14 @@ export default function MonitorPage() {
   const [replays, setReplays] = useState<ReplayMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // 标记抽烟事件后本地乐观更新 verdict，避免等 10s 轮询
-  const setVerdict = (eventId: string, verdict: "correct" | "wrong") => {
+  // 标记某张回放图片后本地乐观更新，避免等 10s 轮询
+  const setFrameVerdict = (eventId: string, frame: string, verdict: "correct" | "wrong") => {
     setReplays((prev) =>
-      prev.map((r) => (r.event_id === eventId ? { ...r, verdict } : r))
+      prev.map((r) =>
+        r.event_id === eventId
+          ? { ...r, frame_verdicts: { ...(r.frame_verdicts ?? {}), [frame]: verdict } }
+          : r
+      )
     );
   };
 
@@ -209,7 +213,7 @@ export default function MonitorPage() {
         </Card>
 
         {/* 事件回放 */}
-        <ReplayPanel api={api} replays={replays} onVerdict={setVerdict} />
+        <ReplayPanel api={api} replays={replays} onFrameVerdict={setFrameVerdict} />
 
         {/* 实时日志（整行宽，不落盘） */}
         <LogPanel logs={logs} />

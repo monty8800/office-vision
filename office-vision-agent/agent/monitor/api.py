@@ -205,7 +205,13 @@ def create_monitor_app(hub: MonitorHub) -> FastAPI:
     async def replays() -> dict[str, Any]:
         items = await asyncio.to_thread(hub.replay.list_replays)
         for r in items:
-            r["verdict"] = hub.verdict_for(str(r.get("event_id", "")))
+            eid = str(r.get("event_id", ""))
+            fv: dict[str, str] = {}
+            for name in r.get("snapshots") or []:
+                v = hub.frame_verdict_for(eid, str(name))
+                if v:
+                    fv[str(name)] = v
+            r["frame_verdicts"] = fv
         return {"replays": items}
 
     @app.get("/monitor/replays/{event_id}/frames/{name}")
@@ -215,12 +221,12 @@ def create_monitor_app(hub: MonitorHub) -> FastAPI:
             raise HTTPException(status_code=404, detail="回放截图不存在")
         return FileResponse(path, media_type="image/jpeg")
 
-    @app.post("/monitor/events/{event_id}/mark")
-    async def mark_event(event_id: str, request: MarkRequest) -> dict[str, Any]:
-        """标记抽烟事件（误判/正常）；误判时导出回放帧为训练负样本。"""
+    @app.post("/monitor/events/{event_id}/frames/{frame}/mark")
+    async def mark_frame(event_id: str, frame: str, request: MarkRequest) -> dict[str, Any]:
+        """标记某张回放图片（误判/正常）；误判时导出该帧为训练负样本。"""
         try:
             return await asyncio.to_thread(
-                hub.mark_event, event_id, request.verdict, request.note, request.export_negatives
+                hub.mark_frame, event_id, frame, request.verdict, request.note, request.export_negatives
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
