@@ -17,7 +17,9 @@ import {
 import { Card, EmptyState, Stat } from "@/components/ui";
 import { DeviceFilter, useDeviceFilter } from "@/components/device-filter";
 
-interface AnalysisData {
+type TabKey = "sitting" | "smoking";
+
+interface SmokingData {
   summary: BehaviorSummary;
   sessions: BehaviorSession[];
   trend: TrendDay[];
@@ -54,8 +56,8 @@ function formatHm(iso: string): string {
   });
 }
 
-// 坐席与工作时长面板：进入/离开时间 + 每日在岗时长与离开次数
-function SittingPanel({ device }: { device?: string | null }) {
+// ============ 坐席时长 Tab（2 栏） ============
+function SittingTab({ device }: { device?: string | null }) {
   const [today, setToday] = useState<SittingToday | null>(null);
   const [daily, setDaily] = useState<SittingDay[]>([]);
   const [sessions, setSessions] = useState<SittingSession[]>([]);
@@ -111,127 +113,111 @@ function SittingPanel({ device }: { device?: string | null }) {
   const maxSec = Math.max(1, ...daily.map((d) => d.total_seconds));
 
   return (
-    <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold">坐席与工作时长</h2>
-          <p className="text-xs text-zinc-500">
-            进入/离开画面时间 · 每日在岗时长与离开次数（离开 &lt;60s 视为连续在岗）
-          </p>
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      {/* 左列：今日指标 + 每日趋势 */}
+      <div className="space-y-4 xl:col-span-3">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Stat
+            label="今日坐席时长"
+            value={formatDuration(today.total_seconds)}
+            hint={`平均 ${formatDuration(today.avg_seconds)} / 次`}
+          />
+          <Stat label="在座次数" value={today.sessions} hint={`进入画面 ${today.sessions} 次`} />
+          <Stat label="离开次数" value={today.leaves} hint={`离开画面 ${today.leaves} 次`} />
+          <Stat
+            label="当前状态"
+            value={today.now_sitting ? "在座中" : "已离开"}
+            hint={
+              today.now_sitting && today.current_session_start
+                ? `本次自 ${formatHm(today.current_session_start)}`
+                : undefined
+            }
+          />
         </div>
-        <div className="flex gap-1 rounded-lg bg-zinc-800/60 p-1">
-          {([7, 30] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`rounded px-2 py-0.5 text-xs transition-colors ${
-                days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {d} 天
-            </button>
-          ))}
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat
-          label="今日坐席时长"
-          value={formatDuration(today.total_seconds)}
-          hint={`平均 ${formatDuration(today.avg_seconds)} / 次`}
-        />
-        <Stat label="在座次数" value={today.sessions} hint={`今日进入 ${today.sessions} 次`} />
-        <Stat label="离开次数" value={today.leaves} hint={`离开画面 ${today.leaves} 次`} />
-        <Stat
-          label="当前状态"
-          value={today.now_sitting ? "在座中" : "已离开"}
-          hint={
-            today.now_sitting && today.current_session_start
-              ? `本次自 ${formatHm(today.current_session_start)}`
-              : undefined
-          }
-        />
-      </div>
-
-      <div>
-        <p className="mb-1.5 text-xs font-semibold text-zinc-400">每日在岗时长（近 {days} 天）</p>
-        <div className="flex h-24 items-end gap-[3px]">
-          {daily.map((d) => (
-            <div
-              key={d.day}
-              className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-              title={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} · 离开 ${d.leaves}`}
-            >
-              <div
-                className={`w-full rounded-t-sm ${
-                  d.total_seconds > 0 ? "bg-sky-500/70" : "bg-zinc-800"
+        <Card title={`每日在岗时长（近 ${days} 天）`} className="relative">
+          <div className="absolute right-4 top-4 flex gap-1 rounded-md bg-zinc-800 p-0.5">
+            {([7, 30] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                  days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
                 }`}
-                style={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
-              />
-              {days === 7 || new Date(`${d.day}T00:00:00`).getDate() % 5 === 0 ? (
-                <span className="text-[9px] tabular-nums text-zinc-600">{d.day.slice(5)}</span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-1.5 text-xs font-semibold text-zinc-400">
-          进出记录（最近 {sessions.length} 条）
-        </p>
-        {grouped.length === 0 ? (
-          <EmptyState text="暂无记录" />
-        ) : (
-          <div className="space-y-3">
-            {grouped.map(([day, list]) => (
-              <div key={day}>
-                <p className="mb-1 text-xs text-zinc-500">
-                  {dayLabel(day)} <span className="text-zinc-600">· {list.length} 段</span>
-                </p>
-                <ul className="divide-y divide-zinc-800/60">
-                  {list.map((s, i) => (
-                    <li key={i} className="flex items-center gap-3 py-1.5 text-sm">
-                      <span className="w-44 shrink-0 tabular-nums text-zinc-300">
-                        {formatHm(s.start_time)} – {s.end_time ? formatHm(s.end_time) : "进行中"}
-                      </span>
-                      <span className="w-20 shrink-0 tabular-nums text-zinc-400">
-                        {formatDuration(s.duration_seconds)}
-                      </span>
-                      {!s.end_time && (
-                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                          在座中
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+              >
+                {d} 天
+              </button>
+            ))}
+          </div>
+          <div className="mt-6 flex h-40 items-end gap-[3px]">
+            {daily.map((d) => (
+              <div
+                key={d.day}
+                className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+                title={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} · 离开 ${d.leaves}`}
+              >
+                <div
+                  className={`w-full rounded-t-sm ${
+                    d.total_seconds > 0 ? "bg-sky-500/70" : "bg-zinc-800"
+                  }`}
+                  style={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
+                />
+                {days === 7 || new Date(`${d.day}T00:00:00`).getDate() % 5 === 0 ? (
+                  <span className="text-[9px] tabular-nums text-zinc-600">{d.day.slice(5)}</span>
+                ) : null}
               </div>
             ))}
           </div>
-        )}
+        </Card>
+      </div>
+
+      {/* 右列：进出记录（紧凑，小高度滚动） */}
+      <div className="xl:col-span-2">
+        <Card title={`进出记录（最近 ${sessions.length} 条）`}>
+          <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
+            {grouped.length === 0 ? (
+              <EmptyState text="暂无记录" />
+            ) : (
+              grouped.map(([day, list]) => (
+                <div key={day}>
+                  <p className="mb-1 text-[11px] font-semibold text-zinc-400">
+                    {dayLabel(day)}
+                    <span className="ml-1.5 font-normal text-zinc-600">· {list.length} 段</span>
+                  </p>
+                  <ul className="divide-y divide-zinc-800/60">
+                    {list.map((s, i) => (
+                      <li key={i} className="flex items-center gap-2 py-1 text-xs">
+                        <span className="shrink-0 tabular-nums text-zinc-300">
+                          {formatHm(s.start_time)} – {s.end_time ? formatHm(s.end_time) : "…"}
+                        </span>
+                        <span className="ml-auto shrink-0 tabular-nums text-zinc-500">
+                          {formatDuration(s.duration_seconds)}
+                        </span>
+                        {!s.end_time && (
+                          <span className="shrink-0 rounded bg-emerald-500/20 px-1 py-0.5 text-[10px] text-emerald-300">
+                            在座中
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
 }
 
-// useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
-export default function AnalysisPage() {
-  return (
-    <Suspense fallback={null}>
-      <AnalysisContent />
-    </Suspense>
-  );
-}
-
-function AnalysisContent() {
-  const { device } = useDeviceFilter();
-  const [behavior, setBehavior] = useState(BEHAVIORS[0].key);
-  const [days, setDays] = useState<7 | 30>(7);
-  const [data, setData] = useState<AnalysisData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+// ============ 抽烟统计 Tab（2 栏） ============
+function SmokingTab({ device }: { device?: string | null }) {
+  const behavior = "smoking";
   const meta = BEHAVIORS.find((b) => b.key === behavior) ?? BEHAVIORS[0];
+  const [days, setDays] = useState<7 | 30>(7);
+  const [data, setData] = useState<SmokingData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -257,7 +243,7 @@ function AnalysisContent() {
       active = false;
       clearInterval(timer);
     };
-  }, [behavior, days, device]);
+  }, [days, device]);
 
   // 节奏派生指标：平均间隔（相邻两次开始时间差的均值）
   const avgInterval = useMemo(() => {
@@ -285,209 +271,222 @@ function AnalysisContent() {
     return [...map.entries()];
   }, [data]);
 
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-900/60 bg-zinc-900/40 p-5">
+        <p className="text-sm text-red-400">抽烟数据加载失败：{error}</p>
+      </div>
+    );
+  }
+  if (!data) return <Card><EmptyState text="加载中…" /></Card>;
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+      {/* 左列：指标 + 时段分布 + 每日趋势 */}
+      <div className="space-y-4 xl:col-span-3">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <Stat label={`今日${meta.label}次数`} value={data.summary.count} />
+          <Stat
+            label="今日总时长"
+            value={formatDuration(data.summary.total_seconds)}
+            hint={
+              data.summary.count > 0
+                ? `平均 ${formatDuration(data.summary.avg_seconds)} / 次`
+                : undefined
+            }
+          />
+          <Stat
+            label="平均间隔"
+            value={avgInterval != null ? formatDuration(avgInterval) : "-"}
+            hint="按最近 50 次记录计算"
+          />
+          <Stat
+            label="距上次"
+            value={data.summary.last_start_time ? formatRelative(data.summary.last_start_time) : "-"}
+            hint={
+              data.summary.last_duration_seconds != null
+                ? `上次时长 ${formatDuration(data.summary.last_duration_seconds)}`
+                : undefined
+            }
+          />
+        </div>
+
+        <Card title="今日时段分布（0:00 – 23:00）">
+          <div className="flex h-32 items-end gap-1">
+            {data.hourly.map((bucket) => (
+              <div
+                key={bucket.hour}
+                className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+                title={`${bucket.hour}:00 ${bucket.count} 次 / ${formatDuration(bucket.total_seconds)}`}
+              >
+                {bucket.count > 0 ? (
+                  <span className="text-[10px] tabular-nums text-zinc-400">{bucket.count}</span>
+                ) : null}
+                <div
+                  className={`w-full rounded-t-sm ${
+                    bucket.count > 0 ? "bg-red-500/70" : "bg-zinc-800"
+                  }`}
+                  style={{ height: `${Math.max((bucket.count / maxHourly) * 100, 2)}%` }}
+                />
+                <span className="text-[9px] tabular-nums text-zinc-600">{bucket.hour}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card title={`每日趋势（近 ${days} 天）`} className="relative">
+          <div className="absolute right-4 top-4 flex items-center gap-3 text-[11px] text-zinc-500">
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-emerald-500/70" /> 次数
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full bg-amber-500/70" /> 时长
+            </span>
+            <div className="ml-2 flex gap-1 rounded-md bg-zinc-800 p-0.5">
+              {([7, 30] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDays(d)}
+                  className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                    days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {d} 天
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mt-6 flex h-40 items-end gap-[3px]">
+            {data.trend.map((day, i) => (
+              <div
+                key={day.day}
+                className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
+                title={`${day.day} ${day.count} 次 / ${formatDuration(day.total_seconds)}`}
+              >
+                <div className="flex w-full flex-1 items-end justify-center gap-[2px]">
+                  <div
+                    className={`w-1/2 max-w-4 rounded-t-sm ${
+                      day.count > 0 ? "bg-emerald-500/70" : "bg-zinc-800"
+                    }`}
+                    style={{ height: `${Math.max((day.count / maxCount) * 100, 2)}%` }}
+                  />
+                  <div
+                    className={`w-1/2 max-w-4 rounded-t-sm ${
+                      day.total_seconds > 0 ? "bg-amber-500/70" : "bg-zinc-800"
+                    }`}
+                    style={{ height: `${Math.max((day.total_seconds / maxSeconds) * 100, 2)}%` }}
+                  />
+                </div>
+                {days === 7 || i === data.trend.length - 1 || i % 5 === 0 ? (
+                  <span
+                    className={`text-[10px] tabular-nums ${
+                      isWeekend(day.day) ? "text-amber-400/80" : "text-zinc-500"
+                    }`}
+                  >
+                    {day.day.slice(5)}
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* 右列：抽烟记录明细（紧凑，小高度滚动） */}
+      <div className="xl:col-span-2">
+        <Card title={`${meta.label}记录明细（最近 ${data.sessions.length} 条）`}>
+          <div className="max-h-[520px] space-y-3 overflow-y-auto pr-1">
+            {grouped.length === 0 ? (
+              <EmptyState text="暂无记录" />
+            ) : (
+              grouped.map(([day, sessions]) => (
+                <div key={day}>
+                  <p className="mb-1 text-[11px] font-semibold text-zinc-400">
+                    {dayLabel(day)}
+                    <span className="ml-1.5 font-normal text-zinc-600">
+                      · {sessions.length} 次 · 共{" "}
+                      {formatDuration(sessions.reduce((sum, s) => sum + s.duration_seconds, 0))}
+                    </span>
+                  </p>
+                  <ul className="divide-y divide-zinc-800/60">
+                    {sessions.map((s) => {
+                      const all = data.sessions;
+                      const prev = all[all.indexOf(s) + 1];
+                      const gap = prev
+                        ? (new Date(s.start_time).getTime() - new Date(prev.start_time).getTime()) /
+                          1000
+                        : null;
+                      return (
+                        <li key={s.id} className="flex items-center gap-3 py-1.5 text-xs">
+                          <span className="shrink-0 tabular-nums text-zinc-300">
+                            {formatHm(s.start_time)} – {formatHm(s.end_time)}
+                          </span>
+                          <span className="shrink-0 tabular-nums text-zinc-500">
+                            {formatDuration(s.duration_seconds)}
+                          </span>
+                          {gap != null ? (
+                            <span className="ml-auto shrink-0 text-[11px] text-zinc-600">
+                              距上次 {formatDuration(gap)}
+                            </span>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
+export default function AnalysisPage() {
+  return (
+    <Suspense fallback={null}>
+      <AnalysisContent />
+    </Suspense>
+  );
+}
+
+function AnalysisContent() {
+  const { device } = useDeviceFilter();
+  const [tab, setTab] = useState<TabKey>("sitting");
+
+  const tabClass = (key: TabKey) =>
+    `rounded-md px-4 py-1.5 text-sm transition-colors ${
+      tab === key ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"
+    }`;
+
   return (
     <div className="p-6">
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold">行为分析</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            频率、时段分布与记录明细（全天 24 小时，含周末与加班时段）
+            坐席时长、进出记录与行为统计（全天 24 小时，含周末与加班时段）
           </p>
         </div>
-        {/* 行为切换 Tab：注册表新增行为后自动出现 */}
-        <div className="flex items-center gap-3">
-          <DeviceFilter />
-          <div className="flex gap-1 rounded-lg bg-zinc-800/60 p-1">
-            {BEHAVIORS.map((b) => (
-              <button
-                key={b.key}
-                onClick={() => setBehavior(b.key)}
-                className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-                  b.key === behavior
-                    ? "bg-zinc-700 text-zinc-100"
-                    : "text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {b.icon} {b.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <DeviceFilter />
       </header>
 
-      <SittingPanel device={device} />
+      {/* 顶部 Tabs：坐席时长 / 抽烟统计 */}
+      <div className="mb-5 flex gap-1 rounded-lg bg-zinc-800/60 p-1">
+        <button type="button" onClick={() => setTab("sitting")} className={tabClass("sitting")}>
+          🪑 坐席时长
+        </button>
+        <button type="button" onClick={() => setTab("smoking")} className={tabClass("smoking")}>
+          🚬 抽烟统计
+        </button>
+      </div>
 
-      {error ? (
-        <Card className="border-red-900/60">
-          <p className="text-sm text-red-400">数据加载失败：{error}</p>
-        </Card>
-      ) : !data ? (
-        <Card>
-          <EmptyState text="加载中…" />
-        </Card>
+      {tab === "sitting" ? (
+        <SittingTab device={device} />
       ) : (
-        <div className="space-y-4">
-          {/* 指标行 */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <Stat label={`今日${meta.label}次数`} value={data.summary.count} />
-            <Stat
-              label="今日总时长"
-              value={formatDuration(data.summary.total_seconds)}
-              hint={
-                data.summary.count > 0
-                  ? `平均 ${formatDuration(data.summary.avg_seconds)} / 次`
-                  : undefined
-              }
-            />
-            <Stat
-              label="平均间隔"
-              value={avgInterval != null ? formatDuration(avgInterval) : "-"}
-              hint="按最近 50 次记录计算"
-            />
-            <Stat
-              label="距上次"
-              value={data.summary.last_start_time ? formatRelative(data.summary.last_start_time) : "-"}
-              hint={
-                data.summary.last_duration_seconds != null
-                  ? `上次时长 ${formatDuration(data.summary.last_duration_seconds)}`
-                  : undefined
-              }
-            />
-          </div>
-
-          {/* 今日时段分布：全天 0-23 时 */}
-          <Card title="今日时段分布（0:00 – 23:00）">
-            <div className="flex h-36 items-end gap-1">
-              {data.hourly.map((bucket) => (
-                <div
-                  key={bucket.hour}
-                  className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-                  title={`${bucket.hour}:00 ${bucket.count} 次 / ${formatDuration(bucket.total_seconds)}`}
-                >
-                  {bucket.count > 0 ? (
-                    <span className="text-[10px] tabular-nums text-zinc-400">{bucket.count}</span>
-                  ) : null}
-                  <div
-                    className={`w-full rounded-t-sm ${
-                      bucket.count > 0 ? "bg-red-500/70" : "bg-zinc-800"
-                    }`}
-                    style={{ height: `${Math.max((bucket.count / maxHourly) * 100, 2)}%` }}
-                  />
-                  <span className="text-[9px] tabular-nums text-zinc-600">{bucket.hour}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* 每日趋势：次数 + 时长双指标 */}
-          <Card
-            title={`每日趋势（近 ${days} 天）`}
-            className="relative"
-          >
-            <div className="absolute right-4 top-4 flex items-center gap-3 text-[11px] text-zinc-500">
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-emerald-500/70" /> 次数
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="h-2 w-2 rounded-full bg-amber-500/70" /> 时长
-              </span>
-              <div className="ml-2 flex gap-1 rounded-md bg-zinc-800 p-0.5">
-                {([7, 30] as const).map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDays(d)}
-                    className={`rounded px-2 py-0.5 transition-colors ${
-                      days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {d} 天
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="mt-6 flex h-56 items-end gap-[3px]">
-              {data.trend.map((day, i) => (
-                <div
-                  key={day.day}
-                  className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
-                  title={`${day.day} ${day.count} 次 / ${formatDuration(day.total_seconds)}`}
-                >
-                  <div className="flex w-full flex-1 items-end justify-center gap-[2px]">
-                    <div
-                      className={`w-1/2 max-w-4 rounded-t-sm ${
-                        day.count > 0 ? "bg-emerald-500/70" : "bg-zinc-800"
-                      }`}
-                      style={{ height: `${Math.max((day.count / maxCount) * 100, 2)}%` }}
-                    />
-                    <div
-                      className={`w-1/2 max-w-4 rounded-t-sm ${
-                        day.total_seconds > 0 ? "bg-amber-500/70" : "bg-zinc-800"
-                      }`}
-                      style={{ height: `${Math.max((day.total_seconds / maxSeconds) * 100, 2)}%` }}
-                    />
-                  </div>
-                  {/* 30 天模式下只标部分日期，避免拥挤 */}
-                  {days === 7 || i === data.trend.length - 1 || i % 5 === 0 ? (
-                    <span
-                      className={`text-[10px] tabular-nums ${
-                        isWeekend(day.day) ? "text-amber-400/80" : "text-zinc-500"
-                      }`}
-                    >
-                      {day.day.slice(5)}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </Card>
-
-          {/* 记录明细 */}
-          <Card title={`${meta.label}记录明细（最近 ${data.sessions.length} 条）`}>
-            {grouped.length === 0 ? (
-              <EmptyState text="暂无记录" />
-            ) : (
-              <div className="space-y-4">
-                {grouped.map(([day, sessions]) => (
-                  <div key={day}>
-                    <p className="mb-1.5 text-xs font-semibold text-zinc-400">
-                      {dayLabel(day)}
-                      <span className="ml-2 font-normal text-zinc-600">
-                        {sessions.length} 次 · 共{" "}
-                        {formatDuration(sessions.reduce((sum, s) => sum + s.duration_seconds, 0))}
-                      </span>
-                    </p>
-                    <ul className="divide-y divide-zinc-800/60">
-                      {sessions.map((s) => {
-                        // 与时间上更早一条的间隔（sessions 倒序，下一条即更早）
-                        const all = data.sessions;
-                        const prev = all[all.indexOf(s) + 1];
-                        const gap = prev
-                          ? (new Date(s.start_time).getTime() -
-                              new Date(prev.start_time).getTime()) /
-                            1000
-                          : null;
-                        return (
-                          <li key={s.id} className="flex items-center gap-4 py-2 text-sm">
-                            <span className="w-28 shrink-0 tabular-nums text-zinc-300">
-                              {formatHm(s.start_time)} – {formatHm(s.end_time)}
-                            </span>
-                            <span className="w-20 shrink-0 tabular-nums text-zinc-400">
-                              {formatDuration(s.duration_seconds)}
-                            </span>
-                            <span className="text-xs text-zinc-600">
-                              {gap != null ? `距上次 ${formatDuration(gap)}` : ""}
-                            </span>
-                            <span className="ml-auto text-xs text-zinc-600">{s.device_id}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+        <SmokingTab device={device} />
       )}
     </div>
   );
