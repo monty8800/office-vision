@@ -85,6 +85,25 @@ export interface SittingSession {
   duration_seconds: number;
 }
 
+export interface SittingRangeDay {
+  day: string;
+  total_seconds: number;
+  sessions: number;
+  leaves: number;
+}
+
+export interface SittingRange {
+  start: string;
+  end: string;
+  days: SittingRangeDay[];
+  total_seconds: number;
+  sessions: number;
+  leaves: number;
+  day_count: number;
+  active_days: number;
+  avg_per_day: number;
+}
+
 // ---------- 客户端日志 ----------
 
 export interface LogChunkMeta {
@@ -153,6 +172,10 @@ export const serverApi = {
   sittingDaily: (days = 7, deviceId?: string | null) =>
     getJson<{ days: SittingDay[] }>(
       `/api/sitting/daily?days=${days}${deviceParam(deviceId)}`
+    ),
+  sittingRange: (start: string, end: string, deviceId?: string | null) =>
+    getJson<SittingRange>(
+      `/api/sitting/range?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}${deviceParam(deviceId)}`
     ),
   sittingSessions: (limit = 50, deviceId?: string | null) =>
     getJson<{ items: SittingSession[]; limit: number; offset: number }>(

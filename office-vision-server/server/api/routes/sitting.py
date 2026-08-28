@@ -301,3 +301,67 @@ async def sitting_sessions(
     return SittingSessionList(
         items=items[offset : offset + limit], limit=limit, offset=offset
     )
+
+
+class SittingRangeDay(BaseModel):
+    day: date
+    total_seconds: float
+    sessions: int
+    leaves: int
+
+
+class SittingRange(BaseModel):
+    start: date
+    end: date
+    days: list[SittingRangeDay]
+    total_seconds: float
+    sessions: int
+    leaves: int
+    day_count: int  # 区间内自然日数
+    active_days: int  # 有坐席数据的天数
+    avg_per_day: float  # 日均坐席时长 = total / day_count
+
+
+@router.get("/sitting/range", response_model=SittingRange, summary="指定日期区间坐席聚合")
+async def sitting_range(
+    session: SessionDep,
+    start: date,
+    end: date,
+    device_id: str | None = None,
+    merge_gap_seconds: float = Query(default=_DEFAULT_MERGE_GAP, ge=0, le=3600),
+) -> SittingRange:
+    """返回 [start, end]（含）的每日坐席数据 + 区间聚合（仅到今日为止）。"""
+    today = datetime.now().astimezone().date()
+    if start > end:
+        start, end = end, start
+    end = min(end, today)
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
+    segments, _ = await _segments_until(session, device_id, now_utc, merge_gap_seconds)
+
+    day_list: list[SittingRangeDay] = []
+    d = start
+    while d <= end:
+        day_start = _local_day_start_utc(d)
+        day_end = now_utc if d == today else _local_day_start_utc(d + timedelta(days=1))
+        total, sessions, leaves, _ = _day_agg(segments, day_start, day_end)
+        day_list.append(
+            SittingRangeDay(day=d, total_seconds=total, sessions=sessions, leaves=leaves)
+        )
+        d += timedelta(days=1)
+
+    # 区间整体聚合（避免跨午夜会话被跨日重复计）
+    range_start_utc = _local_day_start_utc(start)
+    range_end_utc = now_utc if end == today else _local_day_start_utc(end + timedelta(days=1))
+    total, sessions, leaves, _ = _day_agg(segments, range_start_utc, range_end_utc)
+    day_count = (end - start).days + 1
+    return SittingRange(
+        start=start,
+        end=end,
+        days=day_list,
+        total_seconds=total,
+        sessions=sessions,
+        leaves=leaves,
+        day_count=day_count,
+        active_days=sum(1 for x in day_list if x.total_seconds > 0),
+        avg_per_day=total / day_count if day_count else 0.0,
+    )

@@ -10,6 +10,8 @@ import {
   type BehaviorSummary,
   type HourBucket,
   type SittingDay,
+  type SittingRange,
+  type SittingRangeDay,
   type SittingSession,
   type SittingToday,
   type TrendDay,
@@ -75,13 +77,120 @@ function BarBox({
   );
 }
 
+// ---- 日期区间工具 / 预设 / RangePicker ----
+function isoDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function addDays(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+function addMonths(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setMonth(x.getMonth() + n);
+  return x;
+}
+
+interface RangeValue {
+  start: string;
+  end: string;
+  label: string;
+}
+
+const RANGE_PRESETS: { key: string; label: string; range: () => { start: Date; end: Date } }[] = [
+  { key: "week", label: "本周", range: () => { const t = startOfDay(new Date()); const dow = (t.getDay() + 6) % 7; return { start: addDays(t, -dow), end: t }; } },
+  { key: "7d", label: "最近7天", range: () => { const t = startOfDay(new Date()); return { start: addDays(t, -6), end: t }; } },
+  { key: "month", label: "本月", range: () => { const t = startOfDay(new Date()); return { start: new Date(t.getFullYear(), t.getMonth(), 1), end: t }; } },
+  { key: "30d", label: "最近30天", range: () => { const t = startOfDay(new Date()); return { start: addDays(t, -29), end: t }; } },
+  { key: "lastmonth", label: "上月", range: () => { const t = startOfDay(new Date()); return { start: new Date(t.getFullYear(), t.getMonth() - 1, 1), end: new Date(t.getFullYear(), t.getMonth(), 0) }; } },
+  { key: "3m", label: "三个月", range: () => { const t = startOfDay(new Date()); return { start: addMonths(t, -3), end: t }; } },
+  { key: "6m", label: "半年", range: () => { const t = startOfDay(new Date()); return { start: addMonths(t, -6), end: t }; } },
+  { key: "year", label: "本年", range: () => { const t = startOfDay(new Date()); return { start: new Date(t.getFullYear(), 0, 1), end: t }; } },
+  { key: "1y", label: "最近一年", range: () => { const t = startOfDay(new Date()); return { start: addMonths(t, -12), end: t }; } },
+  { key: "lastyear", label: "去年", range: () => { const t = startOfDay(new Date()); return { start: new Date(t.getFullYear() - 1, 0, 1), end: new Date(t.getFullYear() - 1, 11, 31) }; } },
+];
+
+function RangePicker({
+  value,
+  onChange,
+}: {
+  value: RangeValue;
+  onChange: (v: RangeValue) => void;
+}) {
+  const applyPreset = (key: string) => {
+    const p = RANGE_PRESETS.find((r) => r.key === key);
+    if (!p) return;
+    const { start, end } = p.range();
+    onChange({ start: isoDate(start), end: isoDate(end), label: p.label });
+  };
+  const onDate = (side: "start" | "end", v: string) => {
+    onChange({
+      start: side === "start" ? v : value.start,
+      end: side === "end" ? v : value.end,
+      label: "自定义",
+    });
+  };
+  // 当前预设（用于显示选中项）
+  const activeKey =
+    RANGE_PRESETS.find((p) => p.label === value.label)?.key ??
+    (value.label === "自定义" ? "custom" : "custom");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <select
+        value={activeKey}
+        onChange={(e) => applyPreset(e.target.value)}
+        className="rounded-md bg-zinc-800 px-2 py-1 text-zinc-300"
+      >
+        <option value="custom">自定义</option>
+        {RANGE_PRESETS.map((p) => (
+          <option key={p.key} value={p.key}>
+            {p.label}
+          </option>
+        ))}
+      </select>
+      <input
+        type="date"
+        value={value.start}
+        max={value.end}
+        onChange={(e) => onDate("start", e.target.value)}
+        className="rounded-md bg-zinc-800 px-2 py-1 text-zinc-300"
+      />
+      <span className="text-zinc-600">→</span>
+      <input
+        type="date"
+        value={value.end}
+        min={value.start}
+        max={isoDate(new Date())}
+        onChange={(e) => onDate("end", e.target.value)}
+        className="rounded-md bg-zinc-800 px-2 py-1 text-zinc-300"
+      />
+      <span className="rounded bg-zinc-700/60 px-2 py-0.5 text-zinc-400">{value.label}</span>
+    </div>
+  );
+}
+
 // ============ 坐席时长 Tab（2 栏） ============
 function SittingTab({ device }: { device?: string | null }) {
   const [today, setToday] = useState<SittingToday | null>(null);
-  const [daily, setDaily] = useState<SittingDay[]>([]);
+  const [range, setRange] = useState<RangeValue>(() => {
+    const t = startOfDay(new Date());
+    return { start: isoDate(addDays(t, -6)), end: isoDate(t), label: "最近7天" };
+  });
+  const [rangeData, setRangeData] = useState<SittingRange | null>(null);
+  const [weekDaily, setWeekDaily] = useState<SittingDay[]>([]);
+  const [monthDaily, setMonthDaily] = useState<SittingDay[]>([]);
   const [sessions, setSessions] = useState<SittingSession[]>([]);
-  const [days, setDays] = useState<7 | 30>(7);
   const [error, setError] = useState<string | null>(null);
+
+  // 周/月平均 = 近 7 / 30 天的日均坐席时长（独立于区间选择器）
+  const weekAvg = weekDaily.reduce((s, d) => s + d.total_seconds, 0) / 7;
+  const monthAvg = monthDaily.reduce((s, d) => s + d.total_seconds, 0) / 30;
 
   const grouped = useMemo(() => {
     const map = new Map<string, SittingSession[]>();
@@ -97,14 +206,18 @@ function SittingTab({ device }: { device?: string | null }) {
     let active = true;
     const load = async () => {
       try {
-        const [t, d, s] = await Promise.all([
+        const [t, w, m, r, s] = await Promise.all([
           serverApi.sittingToday(device),
-          serverApi.sittingDaily(days, device),
+          serverApi.sittingDaily(7, device),
+          serverApi.sittingDaily(30, device),
+          serverApi.sittingRange(range.start, range.end, device),
           serverApi.sittingSessions(50, device),
         ]);
         if (active) {
           setToday(t);
-          setDaily(d.days);
+          setWeekDaily(w.days);
+          setMonthDaily(m.days);
+          setRangeData(r);
           setSessions(s.items);
           setError(null);
         }
@@ -118,7 +231,7 @@ function SittingTab({ device }: { device?: string | null }) {
       active = false;
       clearInterval(timer);
     };
-  }, [days, device]);
+  }, [range.start, range.end, device]);
 
   if (error) {
     return (
@@ -129,13 +242,23 @@ function SittingTab({ device }: { device?: string | null }) {
   }
   if (!today) return <Card><EmptyState text="加载中…" /></Card>;
 
-  const maxSec = Math.max(1, ...daily.map((d) => d.total_seconds));
+  const rangeDays = rangeData?.days ?? [];
+  const maxSec = Math.max(1, ...rangeDays.map((d) => d.total_seconds));
+  const gap = rangeDays.length > 90 ? "gap-0" : rangeDays.length > 30 ? "gap-[1px]" : "gap-[3px]";
+  const labelSkip = Math.max(1, Math.ceil(rangeDays.length / 20));
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-      {/* 左列：今日指标 + 每日趋势 */}
+      {/* 左列：今日指标 + 区间选择 + 每日趋势 */}
       <div className="space-y-4 xl:col-span-3">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <RangePicker value={range} onChange={setRange} />
+          <span className="text-xs text-zinc-500">
+            区间共 {formatDuration(rangeData?.total_seconds ?? 0)} · {rangeData?.active_days ?? 0} 天有数据
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <Stat
             label="今日坐席时长"
             value={formatDuration(today.total_seconds)}
@@ -152,24 +275,13 @@ function SittingTab({ device }: { device?: string | null }) {
                 : undefined
             }
           />
+          <Stat label="周平均·日均" value={formatDuration(weekAvg)} hint="近 7 天平均每天在座" />
+          <Stat label="月平均·日均" value={formatDuration(monthAvg)} hint="近 30 天平均每天在座" />
         </div>
 
-        <Card title={`每日在岗时长（近 ${days} 天）`} className="relative">
-          <div className="absolute right-4 top-4 flex gap-1 rounded-md bg-zinc-800 p-0.5">
-            {([7, 30] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDays(d)}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                {d} 天
-              </button>
-            ))}
-          </div>
-          <div className="mt-6 flex h-40 items-end gap-[3px]">
-            {daily.map((d) => (
+        <Card title={`每日在岗时长（${range.start} ~ ${range.end}）`}>
+          <div className={`flex h-40 items-end ${gap}`}>
+            {rangeDays.map((d, i) => (
               <div
                 key={d.day}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
@@ -181,7 +293,7 @@ function SittingTab({ device }: { device?: string | null }) {
                   }`}
                   barStyle={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
                 />
-                {days === 7 || new Date(`${d.day}T00:00:00`).getDate() % 5 === 0 ? (
+                {i % labelSkip === 0 ? (
                   <span className="text-[9px] tabular-nums text-zinc-600">{d.day.slice(5)}</span>
                 ) : null}
               </div>
