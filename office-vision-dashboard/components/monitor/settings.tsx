@@ -199,24 +199,33 @@ export function AnnotationPanel({ api }: { api: MonitorApi }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const loadFrame = async () => {
+    const res = await fetch(api.rawFrameUrl, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const dataUrl = await new Promise<string>((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.readAsDataURL(blob);
+    });
+    setImgSrc(dataUrl);
+    setBoxes([]);
+  };
+
   const fetchFrame = async () => {
     setMsg("加载当前帧…");
     try {
-      const res = await fetch(api.rawFrameUrl, { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const dataUrl = await new Promise<string>((resolve) => {
-        const r = new FileReader();
-        r.onload = () => resolve(r.result as string);
-        r.readAsDataURL(blob);
-      });
-      setImgSrc(dataUrl);
-      setBoxes([]);
+      await loadFrame();
       setMsg(null);
     } catch (e) {
       setMsg(`加载帧失败：${e instanceof Error ? e.message : String(e)}`);
     }
   };
+
+  // 进入标注模式即自动获取当前帧
+  useEffect(() => {
+    if (active) void fetchFrame();
+  }, [active]);
 
   const onImgLoad = () => {
     if (imgRef.current) {
@@ -296,10 +305,15 @@ export function AnnotationPanel({ api }: { api: MonitorApi }) {
         negative,
         device_id: "",
       });
-      setMsg(`已保存：${r.saved_image}（${negative ? "负样本" : `${r.boxes} 框`}）`);
-      setBoxes([]);
-      setImgSrc(null);
-      setActive(false);
+      // 保存后自动获取下一帧继续标注（不退出标注模式）
+      const savedMsg = `已保存：${r.saved_image}（${negative ? "负样本" : `${r.boxes} 框`}）`;
+      try {
+        await loadFrame();
+      } catch {
+        setBoxes([]);
+        setImgSrc(null);
+      }
+      setMsg(savedMsg);
     } catch (e) {
       setMsg(`保存失败：${e instanceof Error ? e.message : String(e)}`);
     }
