@@ -14,13 +14,77 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, fields
 
 import cv2
 import numpy as np
 import numpy.typing as npt
+from PIL import Image, ImageDraw, ImageFont
 
 from agent.vision.frame import Box, PoseFeatures, VisionContext
+
+# cv2.putText 的 Hershey 字体不包含中文，需用 PIL + 中文字体渲染文本。候选字体路径：
+_CJK_FONT_CANDIDATES = (
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/arphic/uming.ttc",
+)
+_cjk_font_path: str | None = None
+_cjk_font_resolved = False
+_font_cache: dict[int, ImageFont.FreeTypeFont] = {}
+
+
+def _resolve_cjk_font() -> str | None:
+    """返回可渲染中文的字体路径；找不到返回 None（退化为 ASCII 渲染）。"""
+    global _cjk_font_path, _cjk_font_resolved
+    if _cjk_font_resolved:
+        return _cjk_font_path
+    for cand in _CJK_FONT_CANDIDATES:
+        if os.path.exists(cand):
+            _cjk_font_path = cand
+            break
+    _cjk_font_resolved = True
+    return _cjk_font_path
+
+
+def _draw_texts(
+    canvas: npt.NDArray[np.uint8],
+    items: list[tuple[str, tuple[int, int], float, tuple[int, int, int], int]],
+) -> None:
+    """用 PIL + 中文字体把 items 全部绘制到 BGR canvas（就地替换）。
+
+    items 项：(text, (x,y), scale, (b,g,r), thickness)。
+    无中文字体时退化用 cv2.putText（中文会变 '?'，但至少不报错）。
+    """
+    if not items:
+        return
+    font_path = _resolve_cjk_font()
+    if font_path is None:
+        for text, org, scale, color, thickness in items:
+            cv2.putText(canvas, text, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thickness)
+        return
+    pil = Image.fromarray(cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil)
+    for text, org, scale, color, thickness in items:
+        size = max(12, int(round(scale * 32)))
+        font = _font_cache.get(size)
+        if font is None:
+            font = ImageFont.truetype(font_path, size)
+            _font_cache[size] = font
+        b, g, r = color
+        fill = (int(r), int(g), int(b))
+        draw.text(
+            (int(org[0]), int(org[1])),
+            text,
+            font=font,
+            fill=fill,
+            stroke_width=max(0, thickness - 1),
+            stroke_fill=fill,
+        )
+    canvas[:] = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
 
 # MediaPipe HandLandmarker 骨架连接
 _HAND_CONNECTIONS = (
@@ -56,6 +120,17 @@ _LABEL_COLORS: dict[str, tuple[int, int, int]] = {
     "cigarette": (0, 0, 255),
 }
 _DEFAULT_COLOR = (200, 200, 200)
+
+# 显示层中文标签映射（仅可视化，不改检测/事件逻辑的原始 label）
+_LABEL_ZH: dict[str, str] = {
+    "person": "人",
+    "face": "脸",
+    "hand": "手",
+    "cup": "杯子",
+    "phone": "手机",
+    "cigarette": "香烟",
+    "smoking": "吸烟",
+}
 
 
 @dataclass
@@ -109,26 +184,26 @@ def annotate(
     fps_text: str = "",
     event_text: str = "",
 ) -> npt.NDArray[np.uint8]:
-    """在画面副本上绘制全部启用的 Overlay，返回新图。"""
+    """在画面副本上绘制全部启用的 Overlay，返回新图。
+
+    形状（框/线/点）用 cv2，文本统一用 PIL+中文字体绘制（cv2 无法渲染中文）。
+    """
     canvas = image.copy()
     pose = context.pose
+    texts: list[tuple[str, tuple[int, int], float, tuple[int, int, int], int]] = []
 
     if toggles.bbox:
         for det in context.detections:
             color = _LABEL_COLORS.get(det.label, _DEFAULT_COLOR)
             x1, y1, x2, y2 = det.box.as_int_tuple()
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
-            label = f"{det.label} {det.confidence:.2f}"
-            cv2.putText(
-                canvas, label, (x1, max(y1 - 6, 12)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1
-            )
+            label = f"{_LABEL_ZH.get(det.label, det.label)} {det.confidence:.2f}"
+            texts.append((label, (x1, max(y1 - 6, 12)), 0.5, color, 1))
 
     if toggles.mouth and pose.mouth_box is not None:
         x1, y1, x2, y2 = pose.mouth_box.as_int_tuple()
         cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 120, 255), 1)
-        cv2.putText(
-            canvas, "mouth", (x1, max(y1 - 4, 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 120, 255), 1
-        )
+        texts.append(("嘴", (x1, max(y1 - 4, 10)), 0.4, (0, 120, 255), 1))
 
     if toggles.hand:
         for hand in pose.hands:
@@ -151,33 +226,27 @@ def annotate(
                 1,
             )
             mid = ((tip[0] + center[0]) / 2, (tip[1] + center[1]) / 2)
-            cv2.putText(
-                canvas,
-                f"Distance: {dist:.0f} px",
-                (int(mid[0]) + 6, int(mid[1])),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 0),
-                1,
+            texts.append(
+                (f"距离: {dist:.0f} 像素", (int(mid[0]) + 6, int(mid[1])), 0.5, (255, 255, 0), 1)
             )
 
     if toggles.face and pose.mouth_box is not None:
         # FaceLandmarker 仅暴露嘴部区域，用外扩框近似面部位置
         fx1, fy1, fx2, fy2 = pose.mouth_box.expand(3.0).as_int_tuple()
         cv2.rectangle(canvas, (fx1, fy1), (fx2, fy2), (255, 160, 0), 1)
-        cv2.putText(
-            canvas, "face", (fx1, max(fy1 - 4, 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 160, 0), 1
-        )
+        texts.append(("脸", (fx1, max(fy1 - 4, 10)), 0.4, (255, 160, 0), 1))
 
     row = 20
     if toggles.state and state_text:
-        cv2.putText(canvas, state_text, (10, row), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        texts.append((state_text, (10, row), 0.6, (0, 255, 0), 2))
         row += 24
     if toggles.fps and fps_text:
-        cv2.putText(canvas, fps_text, (10, row), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        texts.append((fps_text, (10, row), 0.5, (255, 255, 255), 1))
         row += 20
     if toggles.event and event_text:
-        cv2.putText(canvas, event_text, (10, row), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (80, 200, 255), 1)
+        texts.append((event_text, (10, row), 0.5, (80, 200, 255), 1))
+
+    _draw_texts(canvas, texts)
     return canvas
 
 

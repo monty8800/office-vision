@@ -41,6 +41,30 @@ from agent.vision.frame import VisionContext
 _TIMELINE_LIMIT = 500
 _LOG_LIMIT = 500
 
+# 监控叠加显示用中文映射（仅可视化，状态/事件逻辑仍用英文枚举）
+_PRESENCE_ZH: dict[str, str] = {
+    "waiting": "待机",
+    "working": "工作中",
+    "away": "离开",
+    "sleeping": "休眠",
+}
+_BEHAVIOR_ZH: dict[str, str] = {
+    "idle": "空闲",
+    "smoking": "抽烟",
+    "drinking": "喝水",
+    "playing_phone": "玩手机",
+}
+_EVENT_ZH: dict[str, str] = {
+    "PersonDetected": "检测到人",
+    "SeatOccupied": "有人入座",
+    "SeatEmpty": "座位空置",
+    "AgentAlive": "心跳",
+    "PresenceSleeping": "进入休眠",
+    "PresenceResumed": "检测到人，恢复",
+    "SmokingStarted": "开始吸烟",
+    "SmokingEnded": "停止吸烟",
+}
+
 
 class MonitorHub:
     """聚合帧、事件、性能与状态，供监控 HTTP API 消费。"""
@@ -104,7 +128,8 @@ class MonitorHub:
     async def _on_event(self, event: Event) -> None:
         if isinstance(event, AgentAlive):
             return  # 心跳仅用于 Server 在线判定，不进监控时间轴/状态派生
-        self._latest_event_text = f"{event.event_type} @ {event.occurred_at:%H:%M:%S}"
+        event_zh = _EVENT_ZH.get(event.event_type, event.event_type)
+        self._latest_event_text = f"{event_zh} @ {event.occurred_at:%H:%M:%S}"
         self._timeline.append(
             {
                 "time": event.occurred_at.isoformat(),
@@ -217,8 +242,10 @@ class MonitorHub:
             ok, encoded = cv2.imencode(".jpg", frame.image)
             return encoded.tobytes() if ok else None
         perf = self.perf.snapshot()
-        state_text = f"State: {self._presence_state} | Behavior: {self._current_behavior}"
-        fps_text = f"Camera FPS: {perf['camera_fps']} | AI FPS: {perf['ai_fps']}"
+        presence_zh = _PRESENCE_ZH.get(self._presence_state, self._presence_state)
+        behavior_zh = _BEHAVIOR_ZH.get(self._current_behavior, self._current_behavior)
+        state_text = f"状态: {presence_zh} | 行为: {behavior_zh}"
+        fps_text = f"摄像头 FPS: {perf['camera_fps']} | AI FPS: {perf['ai_fps']}"
         canvas = annotate(
             context.frame.image,
             context,
