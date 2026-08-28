@@ -41,6 +41,20 @@ for sub in smoking normal; do
 done
 echo "   已推送。Windows 现有 smoking=$(sshpass -p "$WIN_PASS" ssh -o StrictHostKeyChecking=accept-new "${WIN_USER}@${WIN_IP}" "dir /b \"${WIN_DATA}\\smoking\\*.json\" 2>nul | find /c /v \"\"" 2>/dev/null || echo 0) 条 / normal=$(sshpass -p "$WIN_PASS" ssh -o StrictHostKeyChecking=accept-new "${WIN_USER}@${WIN_IP}" "dir /b \"${WIN_DATA}\\normal\\*.json\" 2>nul | find /c /v \"\"" 2>/dev/null || echo 0) 条"
 
+# == 同步完成：确认数据已落 Windows 后，清空 VM115 上的标注帧，节省服务器资源 ==
+# 只在确认源已全部同步到 Windows 时才删除，避免丢数据；KEEP_VM_ANNOT=1 可跳过。
+echo "== 2b) 清理 VM115 标注（同步完成后）=="
+SRC_N=$(find "${STAGE}/annotate" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
+WIN_N=$(sshpass -p "$WIN_PASS" ssh -o StrictHostKeyChecking=accept-new "${WIN_USER}@${WIN_IP}" "dir /b /s \"${WIN_DATA}\\*.json\" 2>nul | find /c /v \"\"" 2>/dev/null || echo 0)
+if [ "${KEEP_VM_ANNOT:-0}" = "1" ]; then
+  echo "   [跳过] 已设置 KEEP_VM_ANNOT=1，保留 VM115 标注。"
+elif [ "${WIN_N:-0}" -ge "${SRC_N:-0}" ] && [ "${SRC_N:-0}" -gt 0 ]; then
+  "${SSH_VM[@]}" "rm -rf '${ANNO_REMOTE}' && mkdir -p '${ANNO_REMOTE}/smoking' '${ANNO_REMOTE}/normal'" 2>/dev/null || true
+  echo "   已清理 VM115 ${ANNO_REMOTE}（源=${SRC_N} / 窗口=${WIN_N}），标注帧删除，节省磁盘。"
+else
+  echo "   [跳过清理] 同步未确认（源=${SRC_N} / 窗口=${WIN_N}; KEEP_VM_ANNOT 未设），保留 VM115 标注以防丢失。"
+fi
+
 if [ "${SYNC_ONLY:-0}" = "1" ]; then
   echo "== 仅同步（跳过训练）。清理临时目录。"
   rm -rf "$STAGE"
