@@ -170,6 +170,9 @@ export default function MonitorPage() {
           />
         </Card>
 
+        {/* 数据集标注（实时画面右侧，边看识别边标注） */}
+        <AnnotationPanel api={api} />
+
         {/* 行为状态（含状态机） */}
         {state ? <BehaviorPanel state={state} /> : <PlaceholderCard title="行为状态" />}
 
@@ -204,9 +207,6 @@ export default function MonitorPage() {
         {/* 事件回放 + 快照与标注 */}
         <ReplayPanel api={api} replays={replays} />
         <SnapshotPanel api={api} latestEvent={latestEvent} />
-
-        {/* 数据集标注 */}
-        <AnnotationPanel api={api} />
 
         {/* 实时日志（整行宽，不落盘） */}
         <LogPanel logs={logs} />
