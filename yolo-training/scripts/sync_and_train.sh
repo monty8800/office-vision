@@ -62,7 +62,7 @@ if [ "${SYNC_ONLY:-0}" = "1" ]; then
 fi
 
 echo "== 3) Windows 上转换 + 重训（从上一版 best 微调）=="
-"${SSH_WIN[@]}" "cd ${WIN_REPO} && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\labelme2yolo.py > C:\\Users\\dsh\\office-vision-training\\train.log 2>&1 && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\train_cigarette.py --weights C:\\Users\\dsh\\office-vision-training\\office-vision\\yolo-training\\weights\\cigarette-best.pt --epochs 80 --imgsz 640 --batch 32 >> C:\\Users\\dsh\\office-vision-training\\train.log 2>&1; echo TRAIN_EXIT=$?"
+"${SSH_WIN[@]}" "cd ${WIN_REPO} && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\labelme2yolo.py > C:\\Users\\dsh\\office-vision-training\\train.log 2>&1 && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\train_cigarette.py --weights C:\\Users\\dsh\\office-vision-training\\office-vision\\yolo-training\\weights\\cigarette-best.pt --epochs 80 --imgsz 640 --batch 32 >> C:\\Users\\dsh\\office-vision-training\\train.log 2>&1"
 echo "   训练日志：Windows C:\\Users\\dsh\\office-vision-training\\train.log"
 rm -rf "$STAGE"
 echo "== 完成。训练产出 best.pt 后复制回部署：runs/detect/cigarette/weights/best.pt → weights/cigarette-best.pt =="
