@@ -56,6 +56,18 @@ class LabelRequest(BaseModel):
     note: str = ""
 
 
+class MarkRequest(BaseModel):
+    """标记抽烟事件为误判/正常。
+
+    - verdict: correct=正常(确实抽烟) / wrong=误判(不是抽烟)
+    - export_negatives: 误判时是否把回放帧导出为训练负样本（默认 True）
+    """
+
+    verdict: str
+    note: str = ""
+    export_negatives: bool = True
+
+
 class BoxPayload(BaseModel):
     """一个检测框（像素坐标）。"""
 
@@ -191,7 +203,10 @@ def create_monitor_app(hub: MonitorHub) -> FastAPI:
 
     @app.get("/monitor/replays")
     async def replays() -> dict[str, Any]:
-        return {"replays": await asyncio.to_thread(hub.replay.list_replays)}
+        items = await asyncio.to_thread(hub.replay.list_replays)
+        for r in items:
+            r["verdict"] = hub.verdict_for(str(r.get("event_id", "")))
+        return {"replays": items}
 
     @app.get("/monitor/replays/{event_id}/frames/{name}")
     async def replay_snapshot(event_id: str, name: str) -> FileResponse:
@@ -199,6 +214,16 @@ def create_monitor_app(hub: MonitorHub) -> FastAPI:
         if path is None:
             raise HTTPException(status_code=404, detail="回放截图不存在")
         return FileResponse(path, media_type="image/jpeg")
+
+    @app.post("/monitor/events/{event_id}/mark")
+    async def mark_event(event_id: str, request: MarkRequest) -> dict[str, Any]:
+        """标记抽烟事件（误判/正常）；误判时导出回放帧为训练负样本。"""
+        try:
+            return await asyncio.to_thread(
+                hub.mark_event, event_id, request.verdict, request.note, request.export_negatives
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/monitor/labels")
     async def labels(request: LabelRequest) -> dict[str, Any]:

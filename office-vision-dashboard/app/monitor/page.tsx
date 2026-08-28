@@ -34,6 +34,13 @@ export default function MonitorPage() {
   const [replays, setReplays] = useState<ReplayMeta[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // 标记抽烟事件后本地乐观更新 verdict，避免等 10s 轮询
+  const setVerdict = (eventId: string, verdict: "correct" | "wrong") => {
+    setReplays((prev) =>
+      prev.map((r) => (r.event_id === eventId ? { ...r, verdict } : r))
+    );
+  };
+
   // 多 Agent 模式：加载 OVA_AGENT_MONITOR_URLS 映射的设备列表；
   // 未配置映射时保持单设备模式（monitorApi 走 /agent-monitor rewrite）
   useEffect(() => {
@@ -202,7 +209,7 @@ export default function MonitorPage() {
         </Card>
 
         {/* 事件回放 */}
-        <ReplayPanel api={api} replays={replays} />
+        <ReplayPanel api={api} replays={replays} onVerdict={setVerdict} />
 
         {/* 实时日志（整行宽，不落盘） */}
         <LogPanel logs={logs} />

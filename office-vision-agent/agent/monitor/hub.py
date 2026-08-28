@@ -84,6 +84,7 @@ class MonitorHub:
         )
         self._timeline: deque[dict[str, Any]] = deque(maxlen=_TIMELINE_LIMIT)
         self._labels_path = Path(settings.data_dir) / "labels.jsonl"
+        self._verdicts: dict[str, str] = self._load_verdicts()
 
         # 实时日志：仅内存环形缓冲，不落盘；进程退出即清空
         self._logs: deque[dict[str, str]] = deque(maxlen=_LOG_LIMIT)
@@ -299,4 +300,79 @@ class MonitorHub:
         }
         with self._labels_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self._verdicts[event_id] = verdict
         return record
+
+    def _load_verdicts(self) -> dict[str, str]:
+        """启动时读取现有 label 记录：event_id → verdict。"""
+        verdicts: dict[str, str] = {}
+        if not self._labels_path.exists():
+            return verdicts
+        try:
+            for line in self._labels_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    verdicts[str(rec["event_id"])] = str(rec["verdict"])
+                except (ValueError, KeyError):
+                    continue
+        except OSError:
+            logger.exception("读取 label 记录失败: {}", self._labels_path)
+        return verdicts
+
+    def verdict_for(self, event_id: str) -> str | None:
+        """返回某事件的判定（correct/wrong）；未标记返回 None。"""
+        return self._verdicts.get(event_id)
+
+    def mark_event(
+        self, event_id: str, verdict: str, note: str = "", export_negatives: bool = True
+    ) -> dict[str, Any]:
+        """标记抽烟事件为误判/正常；判定为误判时把该事件回放帧导出为训练负样本。
+
+        - correct=正常（确实抽烟）
+        - wrong  =误判（不是抽烟）→ 回放帧存入 annotate/normal/（无框负样本，供重训抑制误检）
+        """
+        if verdict not in {"correct", "wrong"}:
+            msg = f"verdict 必须是 correct/wrong，收到: {verdict!r}"
+            raise ValueError(msg)
+        already = self._verdicts.get(event_id)
+        record = self.record_label(event_id, verdict, note)
+        exported = 0
+        if verdict == "wrong" and export_negatives and already != "wrong":
+            exported = self._export_replay_negatives(event_id)
+        return {**record, "exported_negatives": exported}
+
+    def _export_replay_negatives(self, event_id: str) -> int:
+        """把指定事件的回放截图复制到 annotate/normal/ 作为无框负样本，返回导出帧数。"""
+        frames_dir = Path(self.settings.data_dir) / "replays" / event_id / "frames"
+        if not frames_dir.exists():
+            logger.warning("导出负样本：回放截图不存在 {}", frames_dir)
+            return 0
+        out = Path(self.settings.annotate_dir) / "normal"
+        out.mkdir(parents=True, exist_ok=True)
+        count = 0
+        for img in sorted(frames_dir.glob("*.jpg")):
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            uniq = f"{stamp}-{int(time.time() * 1000) % 1000}-{count}"
+            dst = out / f"{uniq}.jpg"
+            dst.write_bytes(img.read_bytes())
+            cv_img = cv2.imread(str(img))
+            h, w = cv_img.shape[:2] if cv_img is not None else (0, 0)
+            data = {
+                "version": "5.2.0",
+                "flags": {},
+                "shapes": [],
+                "imagePath": dst.name,
+                "imageWidth": w,
+                "imageHeight": h,
+                "imageData": None,
+            }
+            (out / f"{uniq}.json").write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            count += 1
+        if count:
+            logger.info("已导出 {} 帧误判负样本到 {}", count, out)
+        return count

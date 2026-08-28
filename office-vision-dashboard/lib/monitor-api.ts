@@ -83,6 +83,8 @@ export interface ReplayMeta {
   frame_count: number;
   /** 截图模式产物；旧版 mp4 回放无此字段 */
   snapshots?: string[];
+  /** 人工标记：correct=正常(确实抽烟) / wrong=误判(不是抽烟) / null=未标记 */
+  verdict?: "correct" | "wrong" | null;
   payload: Record<string, unknown>;
 }
 
@@ -110,6 +112,17 @@ export function createMonitorApi(basePath = "/agent-monitor") {
       getJson<{ events: MonitorEventItem[] }>(`${basePath}/events?limit=${limit}`),
     logs: (limit = 200) => getJson<{ logs: LogItem[] }>(`${basePath}/logs?limit=${limit}`),
     replays: () => getJson<{ replays: ReplayMeta[] }>(`${basePath}/replays`),
+    markEvent: (
+      eventId: string,
+      verdict: "correct" | "wrong",
+      note = "",
+      exportNegatives = true
+    ) =>
+      postJson<Record<string, unknown>>(`${basePath}/events/${eventId}/mark`, {
+        verdict,
+        note,
+        export_negatives: exportNegatives,
+      }),
     setOverlays: (changes: Partial<OverlayState>) =>
       postJson<OverlayState>(`${basePath}/overlays`, changes),
     annotate: (payload: AnnotatePayload) =>

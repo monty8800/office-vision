@@ -65,15 +65,55 @@ export function OverlayControls({
 
 // ---- Event Replay 列表 + 截图浏览（不录视频，节省磁盘） ----
 
-export function ReplayPanel({ api, replays }: { api: MonitorApi; replays: ReplayMeta[] }) {
+export function ReplayPanel({
+  api,
+  replays,
+  onVerdict,
+}: {
+  api: MonitorApi;
+  replays: ReplayMeta[];
+  onVerdict?: (eventId: string, verdict: "correct" | "wrong") => void;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
   const selectedReplay = replays.find((r) => r.event_id === selected) ?? null;
+
+  const mark = async (eventId: string, verdict: "correct" | "wrong") => {
+    setBusy(eventId);
+    setMsg(null);
+    try {
+      const res = await api.markEvent(eventId, verdict);
+      onVerdict?.(eventId, verdict);
+      const exported = Number(res.exported_negatives ?? 0);
+      setMsg(
+        verdict === "wrong"
+          ? `已标记为误判${exported > 0 ? `，导出 ${exported} 帧到训练负样本` : ""}`
+          : "已标记为正常抽烟"
+      );
+    } catch (e) {
+      setMsg(`标记失败：${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // verdict 徽标
+  const verdictBadge = (verdict: ReplayMeta["verdict"]) => {
+    if (verdict === "wrong")
+      return <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] text-red-300">误判</span>;
+    if (verdict === "correct")
+      return <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">正常</span>;
+    return <span className="rounded bg-zinc-700/60 px-1.5 py-0.5 text-[10px] text-zinc-500">未标记</span>;
+  };
+
   return (
     <Card title="事件回放（事件前 10s + 过程 + 后 10s · 截图模式）">
       {replays.length === 0 ? (
         <EmptyState text="暂无回放（触发开始抽烟/抽烟结束事件后自动生成）" />
       ) : (
         <div className="space-y-2">
+          {msg && <p className="rounded bg-zinc-800 px-2 py-1 text-xs text-emerald-300">{msg}</p>}
           {selectedReplay ? (
             selectedReplay.snapshots && selectedReplay.snapshots.length > 0 ? (
               <div className="grid max-h-64 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-zinc-800 p-1.5">
@@ -92,21 +132,23 @@ export function ReplayPanel({ api, replays }: { api: MonitorApi; replays: Replay
           ) : null}
           <ul className="max-h-40 space-y-1.5 overflow-y-auto">
             {replays.map((replay) => (
-              <li key={replay.event_id}>
+              <li
+                key={replay.event_id}
+                className={`rounded-md ${
+                  selected === replay.event_id ? "bg-emerald-500/15" : "bg-zinc-800/60"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => setSelected(replay.event_id)}
-                  className={`flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-xs ${
-                    selected === replay.event_id
-                      ? "bg-emerald-500/15 text-emerald-300"
-                      : "bg-zinc-800/60 hover:bg-zinc-800"
-                  }`}
+                  className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-left text-xs hover:bg-zinc-800"
                 >
-                  <span>
+                  <span className="flex items-center gap-2">
                     {eventLabel(replay.event_type)}
-                    <span className="ml-2 text-zinc-500">
+                    <span className="text-zinc-500">
                       {replay.snapshots ? `${replay.snapshots.length} 张截图` : `${replay.frame_count} 帧`}
                     </span>
+                    {verdictBadge(replay.verdict)}
                   </span>
                   <span className="tabular-nums text-zinc-500">
                     {new Date(replay.occurred_at).toLocaleTimeString("zh-CN", {
@@ -114,6 +156,36 @@ export function ReplayPanel({ api, replays }: { api: MonitorApi; replays: Replay
                     })}
                   </span>
                 </button>
+                {/* 仅"开始抽烟"事件可标记误判/正常 */}
+                {replay.event_type === "SmokingStarted" ? (
+                  <div className="flex items-center gap-1.5 px-3 pb-1.5">
+                    <span className="text-[10px] text-zinc-600">标记：</span>
+                    <button
+                      type="button"
+                      disabled={busy === replay.event_id}
+                      onClick={() => mark(replay.event_id, "wrong")}
+                      className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                        replay.verdict === "wrong"
+                          ? "bg-red-500/30 text-red-200"
+                          : "bg-zinc-800 text-zinc-400 hover:bg-red-500/20 hover:text-red-300"
+                      }`}
+                    >
+                      误判
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === replay.event_id}
+                      onClick={() => mark(replay.event_id, "correct")}
+                      className={`rounded px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                        replay.verdict === "correct"
+                          ? "bg-emerald-500/30 text-emerald-200"
+                          : "bg-zinc-800 text-zinc-400 hover:bg-emerald-500/20 hover:text-emerald-300"
+                      }`}
+                    >
+                      正常
+                    </button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
