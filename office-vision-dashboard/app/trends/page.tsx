@@ -70,7 +70,7 @@ function BarBox({
 }) {
   return (
     <div className={`group relative ${barClass}`} style={barStyle}>
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-700/70 bg-zinc-900/95 px-2 py-1 text-[11px] text-zinc-100 shadow-lg transition-opacity duration-100 group-hover:opacity-100">
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-700/70 bg-zinc-900/95 px-2 py-1 text-[11px] text-zinc-100 opacity-0 shadow-lg transition-opacity duration-100 group-hover:opacity-100">
         {tip}
       </div>
     </div>
