@@ -175,7 +175,7 @@ function RangePicker({
   );
 }
 
-// ============ 坐席时长 Tab（2 栏） ============
+// ============ 工作时长 Tab（2 栏） ============
 function SittingTab({ device }: { device?: string | null }) {
   const [today, setToday] = useState<SittingToday | null>(null);
   const [range, setRange] = useState<RangeValue>(() => {
@@ -188,7 +188,7 @@ function SittingTab({ device }: { device?: string | null }) {
   const [sessions, setSessions] = useState<SittingSession[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // 周/月平均 = 近 7 / 30 天的日均坐席时长（独立于区间选择器）
+  // 周/月平均 = 近 7 / 30 天的日均工作时长（独立于区间选择器）
   const weekAvg = weekDaily.reduce((s, d) => s + d.total_seconds, 0) / 7;
   const monthAvg = monthDaily.reduce((s, d) => s + d.total_seconds, 0) / 30;
 
@@ -236,7 +236,7 @@ function SittingTab({ device }: { device?: string | null }) {
   if (error) {
     return (
       <div className="rounded-xl border border-red-900/60 bg-zinc-900/40 p-5">
-        <p className="text-sm text-red-400">坐席数据加载失败：{error}</p>
+        <p className="text-sm text-red-400">工作数据加载失败：{error}</p>
       </div>
     );
   }
@@ -260,26 +260,26 @@ function SittingTab({ device }: { device?: string | null }) {
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <Stat
-            label="今日坐席时长"
+            label="今日工作时长"
             value={formatDuration(today.total_seconds)}
             hint={`平均 ${formatDuration(today.avg_seconds)} / 次`}
           />
-          <Stat label="在座次数" value={today.sessions} hint={`进入画面 ${today.sessions} 次`} />
+          <Stat label="工作次数" value={today.sessions} hint={`进入画面 ${today.sessions} 次`} />
           <Stat label="离开次数" value={today.leaves} hint={`离开画面 ${today.leaves} 次`} />
           <Stat
             label="当前状态"
-            value={today.now_sitting ? "在座中" : "已离开"}
+            value={today.now_sitting ? "工作中" : "已离开"}
             hint={
               today.now_sitting && today.current_session_start
                 ? `本次自 ${formatHm(today.current_session_start)}`
                 : undefined
             }
           />
-          <Stat label="周平均·日均" value={formatDuration(weekAvg)} hint="近 7 天平均每天在座" />
-          <Stat label="月平均·日均" value={formatDuration(monthAvg)} hint="近 30 天平均每天在座" />
+          <Stat label="周平均·日均" value={formatDuration(weekAvg)} hint="近 7 天平均每天工作" />
+          <Stat label="月平均·日均" value={formatDuration(monthAvg)} hint="近 30 天平均每天工作" />
         </div>
 
-        <Card title={`每日在岗时长（${range.start} ~ ${range.end}）`}>
+        <Card title={`每日工作时长（${range.start} ~ ${range.end}）`}>
           <div className={`flex h-40 items-end ${gap}`}>
             {rangeDays.map((d, i) => (
               <div
@@ -287,7 +287,7 @@ function SittingTab({ device }: { device?: string | null }) {
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
               >
                 <BarBox
-                  tip={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} 次 · 离开 ${d.leaves} 次`}
+                  tip={`${d.day} 工作 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} 次 · 离开 ${d.leaves} 次`}
                   barClass={`w-full rounded-t-sm ${
                     d.total_seconds > 0 ? "bg-sky-500/70" : "bg-zinc-800"
                   }`}
@@ -326,7 +326,7 @@ function SittingTab({ device }: { device?: string | null }) {
                         </span>
                         {!s.end_time && (
                           <span className="shrink-0 rounded bg-emerald-500/20 px-1 py-0.5 text-[10px] text-emerald-300">
-                            在座中
+                            工作中
                           </span>
                         )}
                       </li>
@@ -599,16 +599,16 @@ function AnalysisContent() {
         <div>
           <h1 className="text-xl font-bold">行为分析</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            坐席时长、进出记录与行为统计（全天 24 小时，含周末与加班时段）
+            工作时长、进出记录与行为统计（全天 24 小时，含周末与加班时段）
           </p>
         </div>
         <DeviceFilter />
       </header>
 
-      {/* 顶部 Tabs：坐席时长 / 抽烟统计 */}
+      {/* 顶部 Tabs：工作时长 / 抽烟统计 */}
       <div className="mb-5 flex gap-1 rounded-lg bg-zinc-800/60 p-1">
         <button type="button" onClick={() => setTab("sitting")} className={tabClass("sitting")}>
-          🪑 坐席时长
+          🪑 工作时长
         </button>
         <button type="button" onClick={() => setTab("smoking")} className={tabClass("smoking")}>
           🚬 抽烟统计
