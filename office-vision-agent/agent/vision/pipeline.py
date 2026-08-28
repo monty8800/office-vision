@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -80,7 +81,15 @@ class VisionPipeline:
         )
         while self._running:
             sleeping = self._presence.state is PresenceState.SLEEPING
-            fps = self._sleep_fps if sleeping else self._process_fps
+            if sleeping:
+                # 深度休眠：关闭摄像头（省电/减压），每隔 wakeup_check_seconds 唤醒查一次人
+                if self._camera.is_open:
+                    self._camera.stop()
+                    logger.info("深度休眠：摄像头已关闭（省电/减压）")
+                await asyncio.sleep(self._presence.wakeup_check_seconds)
+                await self._deep_sleep_check()
+                continue
+            fps = self._process_fps
             frame = self._camera.read()
             if frame is not None and frame.index != self._last_index:
                 self._last_index = frame.index
@@ -89,6 +98,38 @@ class VisionPipeline:
                 except Exception:
                     logger.exception("帧处理异常（已隔离，管线继续）")
             await asyncio.sleep(1.0 / fps)
+
+    async def _deep_sleep_check(self) -> None:
+        """深度休眠周期性唤醒：开摄像头 → 人形检测 → 有人恢复工作，无人再关闭。"""
+        if not self._camera.start():
+            logger.error("深度唤醒：摄像头开启失败（待下周期重试）")
+            return
+        # 丢前几帧等自动曝光稳定
+        for _ in range(10):
+            await asyncio.sleep(0.1)
+            if self._camera.read() is not None:
+                break
+        # 在 resume_wait 窗口内连续喂人员判定；确认有人则恢复工作，否则关闭
+        waiter = max(self._presence.resume_wait_seconds, 1.0)
+        deadline = time.monotonic() + waiter + 2.0
+        resumed = False
+        while time.monotonic() < deadline:
+            frame = self._camera.read()
+            if frame is not None:
+                detections = self._detector.detect(frame)
+                person = any(d.label == "person" for d in detections)
+                events = self._presence.update(person, frame.timestamp)
+                for event in events:
+                    await self._bus.publish(event)
+                if self._presence.state is PresenceState.WORKING:
+                    resumed = True
+                    break
+            await asyncio.sleep(1.0 / self._sleep_fps)
+        if resumed:
+            logger.info("深度唤醒：检测到人，恢复工作")
+        else:
+            self._camera.stop()
+            logger.info("深度唤醒：仍无人，摄像头保持关闭")
 
     # ---- 单帧处理 ----
 

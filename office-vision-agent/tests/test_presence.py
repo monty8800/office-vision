@@ -43,6 +43,15 @@ class TestTransitions:
         assert [type(e) for e in events] == [PresenceSleeping]
         assert pm.state is PresenceState.SLEEPING
 
+    def test_waiting启动即无人超时_进入休眠(self) -> None:
+        """启动后就没人：WAITING 无人超时也进入休眠（摄像头可关闭）。"""
+        pm = _make()
+        events = pm.update(False, 100.0)  # 启动即无人，entry_time=100
+        assert events == []
+        events = pm.update(False, 401.0)  # 100 + 300 + 1 无人超时
+        assert [type(e) for e in events] == [PresenceSleeping]
+        assert pm.state is PresenceState.SLEEPING
+
     def test_休眠中短暂出现不立即恢复(self) -> None:
         pm = _to_sleeping()
         events = pm.update(True, 500.0)

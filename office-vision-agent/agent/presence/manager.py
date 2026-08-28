@@ -32,6 +32,7 @@ class PresenceSettings:
     enabled: bool = True
     sleep_after_seconds: float = 300.0
     resume_wait_seconds: float = 3.0
+    wakeup_check_seconds: float = 300.0  # 深度休眠（摄像头已关）时，每隔多久唤醒查一次人
 
 
 class PresenceState(StrEnum):
@@ -49,6 +50,7 @@ class PresenceManager:
         self._settings = settings or PresenceSettings()
         self._state = PresenceState.WAITING
         self._last_seen = 0.0
+        self._entry_time: float | None = None  # 首次喂帧时刻，用于"启动即无人"超时休眠
         self._return_first_seen: float | None = None
 
     @property
@@ -65,12 +67,24 @@ class PresenceManager:
         """是否运行轻量 Presence 检测。恒为 True：休眠时也要低频检测以便唤醒。"""
         return True
 
+    @property
+    def wakeup_check_seconds(self) -> float:
+        """深度休眠（摄像头已关）时周期性唤醒查人的间隔（秒）。"""
+        return self._settings.wakeup_check_seconds
+
+    @property
+    def resume_wait_seconds(self) -> float:
+        """恢复到 Working 前，需要人员持续在场的秒数。"""
+        return self._settings.resume_wait_seconds
+
     def update(self, person_present: bool, timestamp: float) -> list[Event]:
         """喂入单帧人员判定，返回本帧产出的 Presence 事件。"""
+        if self._entry_time is None:
+            self._entry_time = timestamp
         if person_present:
             self._last_seen = timestamp
         if self._state is PresenceState.WAITING:
-            return self._from_waiting(person_present)
+            return self._from_waiting(person_present, timestamp)
         if self._state is PresenceState.WORKING:
             return self._from_working(person_present, timestamp)
         if self._state is PresenceState.AWAY:
@@ -79,11 +93,14 @@ class PresenceManager:
 
     # ---- 各状态迁移 ----
 
-    def _from_waiting(self, present: bool) -> list[Event]:
-        if not present:
-            return []
-        self._state = PresenceState.WORKING
-        return [SeatOccupied(device_id=self._device_id)]
+    def _from_waiting(self, present: bool, timestamp: float) -> list[Event]:
+        if present:
+            self._state = PresenceState.WORKING
+            return [SeatOccupied(device_id=self._device_id)]
+        if timestamp - (self._entry_time or timestamp) >= self._settings.sleep_after_seconds:
+            self._state = PresenceState.SLEEPING
+            return [PresenceSleeping(device_id=self._device_id)]
+        return []
 
     def _from_working(self, present: bool, timestamp: float) -> list[Event]:
         if present:

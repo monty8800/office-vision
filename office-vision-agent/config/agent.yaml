@@ -40,6 +40,7 @@ presence:
   enabled: true
   sleep_after_seconds: 300       # 离岗多久后自动休眠（5分钟）
   resume_wait_seconds: 3         # 恢复等待
+  wakeup_check_seconds: 300      # 深度休眠(摄像头已关)时每隔多久唤醒查一次人（5分钟）
 
 server:
   url: "http://localhost:8000"
