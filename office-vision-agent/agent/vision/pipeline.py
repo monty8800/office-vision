@@ -109,9 +109,11 @@ class VisionPipeline:
             detections=detections,
             pose=self._pose.analyze(frame),
         )
-        # 行为分类（可选 AI 模块）：检测器支持时注入，供 smoking 插件作为确认通道。
-        # 仅完整管线（有人）时执行，避免休眠/无人时的额外开销。
-        if hasattr(self._detector, "classify_smoking"):
+        # 行为分类（可选 AI 模块）：仅当检出香烟时才注入，供 smoking 插件确认通道。
+        # 无香烟检出的帧不需要分类（节省每帧一次 smoking-cls 推理）。
+        if hasattr(self._detector, "classify_smoking") and any(
+            d.label == "cigarette" for d in detections
+        ):
             cls = self._detector.classify_smoking(frame)
             if cls is not None:
                 context = replace(context, smoking_cls=cls[0], smoking_cls_conf=cls[1])
