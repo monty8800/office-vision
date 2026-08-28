@@ -54,6 +54,21 @@ export interface MonitorEventItem {
   payload: Record<string, unknown>;
 }
 
+export interface AnnotateBox {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface AnnotatePayload {
+  image: string; // dataURL 或 base64 JPEG
+  boxes: AnnotateBox[];
+  label: string;
+  negative: boolean;
+  device_id: string;
+}
+
 export interface LogItem {
   time: string;
   level: string;
@@ -105,7 +120,13 @@ export function createMonitorApi(basePath = "/agent-monitor") {
         verdict,
         note,
       }),
+    annotate: (payload: AnnotatePayload) =>
+      postJson<{ saved_image: string; saved_json: string; boxes: number; negative: boolean }>(
+        `${basePath}/annotate`,
+        payload
+      ),
     streamUrl: `${basePath}/stream`,
+    rawFrameUrl: `${basePath}/raw.png`,
     replaySnapshotUrl: (eventId: string, name: string) =>
       `${basePath}/replays/${eventId}/frames/${name}`,
   };

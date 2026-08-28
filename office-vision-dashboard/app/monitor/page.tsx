@@ -20,6 +20,7 @@ import {
   PluginPanel,
 } from "@/components/monitor/panels";
 import {
+  AnnotationPanel,
   OverlayControls,
   ReplayPanel,
   SnapshotPanel,
@@ -203,6 +204,9 @@ export default function MonitorPage() {
         {/* 事件回放 + 快照与标注 */}
         <ReplayPanel api={api} replays={replays} />
         <SnapshotPanel api={api} latestEvent={latestEvent} />
+
+        {/* 数据集标注 */}
+        <AnnotationPanel api={api} />
 
         {/* 实时日志（整行宽，不落盘） */}
         <LogPanel logs={logs} />

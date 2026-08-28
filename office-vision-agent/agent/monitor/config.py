@@ -23,6 +23,7 @@ class MonitorSettings:
     port: int = 8100
     host: str = "127.0.0.1"  # 跨设备采集/调试时可在 agent.yaml 改为 0.0.0.0
     data_dir: str = "data/monitor"
+    annotate_dir: str = "data/annotate"  # 页面标注产出的图像+labelme JSON 目录（相对 agent 项目根）
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> MonitorSettings:

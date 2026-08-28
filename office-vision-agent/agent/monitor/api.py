@@ -19,7 +19,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -50,6 +54,90 @@ class LabelRequest(BaseModel):
     event_id: str
     verdict: str
     note: str = ""
+
+
+class BoxPayload(BaseModel):
+    """一个检测框（像素坐标）。"""
+
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class AnnotateRequest(BaseModel):
+    """数据集标注保存请求：把当前帧 + 框存为标注（labelme JSON）。
+
+    - image:      dataURL 或裸 base64 的 JPEG 帧
+    - boxes:      画出的香烟框（像素坐标）；negative=True 时忽略并视为负样本
+    - label:      标签名（默认 cigarette）
+    - negative:   True 表示"此帧无烟"（存到 annotate/normal/，不含框）
+    """
+
+    image: str
+    boxes: list[BoxPayload] = []
+    label: str = "cigarette"
+    negative: bool = False
+    device_id: str = ""
+
+
+def _decode_jpeg(data_url_or_b64: str, hub: MonitorHub) -> tuple[bytes, int, int]:
+    """解码 dataURL/裸 base64 的 JPEG，返回 (bytes, 宽, 高)。"""
+    raw = data_url_or_b64
+    if "," in raw[:32] and raw.startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    img_bytes = base64.b64decode(raw)
+    import cv2  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+
+    arr = np.frombuffer(img_bytes, np.uint8)
+    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("图像解码失败（需 JPEG）")
+    return img_bytes, img.shape[1], img.shape[0]
+
+
+def _save_annotation(hub: MonitorHub, req: AnnotateRequest) -> dict[str, Any]:
+    """把帧 + 框存为 labelme JSON（正样本 smoking/ 负样本 normal/）。"""
+    img_bytes, w, h = _decode_jpeg(req.image, hub)
+    sub = "normal" if req.negative else "smoking"
+    out_dir = Path(hub.settings.annotate_dir) / sub
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    uniq = f"{ts}-{int(time.time() * 1000) % 1000}"
+    img_path = out_dir / f"{uniq}.jpg"
+    img_path.write_bytes(img_bytes)
+
+    shapes: list[dict[str, object]] = []
+    if not req.negative:
+        for b in req.boxes:
+            shapes.append(
+                {
+                    "label": req.label,
+                    "points": [[b.x1, b.y1], [b.x2, b.y2]],
+                    "group_id": None,
+                    "shape_type": "rectangle",
+                    "flags": {},
+                }
+            )
+    data = {
+        "version": "5.2.0",
+        "flags": {},
+        "shapes": shapes,
+        "imagePath": img_path.name,
+        "imageWidth": w,
+        "imageHeight": h,
+        "imageData": None,
+    }
+    json_path = out_dir / f"{uniq}.json"
+    json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {
+        "saved_image": img_path.name,
+        "saved_json": json_path.name,
+        "boxes": len(shapes),
+        "negative": req.negative,
+        "recorded_at": ts,
+    }
 
 
 def create_monitor_app(hub: MonitorHub) -> FastAPI:
@@ -116,6 +204,14 @@ def create_monitor_app(hub: MonitorHub) -> FastAPI:
     async def labels(request: LabelRequest) -> dict[str, Any]:
         try:
             return hub.record_label(request.event_id, request.verdict, request.note)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/monitor/annotate")
+    async def annotate(request: AnnotateRequest) -> dict[str, Any]:
+        """保存数据集标注：帧 + 框 → labelme JSON（供 labelme2yolo → 训练）。"""
+        try:
+            return await asyncio.to_thread(_save_annotation, hub, request)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

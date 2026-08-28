@@ -75,3 +75,4 @@ monitor:
   frame_buffer_seconds: 30       # 帧环形缓冲时长（供 Replay 取前段）
   port: 8100                     # Agent 内置监控 HTTP 服务端口
   host: 0.0.0.0                  # 监听局域网，供 Windows 训练机跨设备采集帧（默认 127.0.0.1）
+  annotate_dir: "data/annotate"  # Monitor 页面「数据集标注」产物（图片+labelme JSON）目录
