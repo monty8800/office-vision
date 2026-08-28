@@ -25,8 +25,14 @@ cigarette_min_suspect_seconds: 1.0 # 有香烟证据时的持续时长阈值（�
 cigarette_memory_seconds: 3.0      # 香烟检出后多久内视为有效证据（秒）
 cigarette_min_gesture_frames: 1    # 独立通道确认前窗口内至少几帧食指近嘴（防笔/手表/五官误检）
 
-# --- 行为分类确认通道（smoking-cls，抑制香烟误检）---
-# 开启后，经香烟通道确认前，还需窗口内分类为 smoking 的帧数达标；classifier_confirm_frames=0 关闭。
-# 目的：香烟模型会把笔/手表/耳鼻误检为香烟，叠加整帧行为分类"smoking"双重判定，减少虚警。
-classifier_confirm_frames: 2       # 窗口内分类为 smoking 的最少帧数（0=关闭该通道）
+# --- 香烟位置判据（用户规则：烟在手中或嘴里才算抽烟，放桌上不算）---
+# 香烟框中心须落入"嘴部外扩区"多少次（滚动窗口内）视为"在嘴里"的强证据（无需手势即确认）
+cig_in_mouth_confirm_frames: 2
+# 香烟框中心距"近嘴的手"关键点（腕/食指/拇指）的最大距离（相对嘴部尺寸）
+cig_in_hand_proximity: 2.0
+
+# --- 行为分类确认通道（smoking-cls，默认关闭）---
+# 官方分类模型不可靠（README 记过"smoking 全抬头/normal 全低头"捷径学习），会拉低召回，
+# 已被上方"香烟位置判据"取代；classifier_confirm_frames=0 即关闭。
+classifier_confirm_frames: 0       # 窗口内分类为 smoking 的最少帧数（0=关闭该通道）
 classifier_min_conf: 0.6           # 判定为 smoking 所需的最小分类置信度

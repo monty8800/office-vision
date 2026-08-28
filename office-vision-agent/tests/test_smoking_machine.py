@@ -6,10 +6,12 @@ from collections.abc import Sequence
 
 import pytest
 from plugins.smoking.detector import (
+    CigaretteSignal,
     SmokingConfig,
     SmokingSessionMachine,
     SmokingSignal,
     SmokingState,
+    evaluate_cigarette,
     evaluate_frame,
     hand_near_mouth,
 )
@@ -368,3 +370,64 @@ class TestClassifierGate:
             )
         assert events == []
         assert machine.state is SmokingState.IDLE
+
+
+class TestCigarettePosition:
+    """用户规则：香烟在手里或嘴里才算抽烟；放桌上（不锁位置）不算。"""
+
+    @staticmethod
+    def _in_mouth() -> CigaretteSignal:
+        return CigaretteSignal(visible=True, in_mouth=True)
+
+    @staticmethod
+    def _in_hand() -> CigaretteSignal:
+        return CigaretteSignal(visible=True, in_hand=True)
+
+    def test_香烟在嘴里_无需手势_确认(self) -> None:
+        """烟在嘴里是抽烟最直接证据：窗口内达阈即使无手势也确认。"""
+        machine = _make_machine(cig_in_mouth_confirm_frames=2)
+        events: list[object] = []
+        for i in range(2):
+            events.extend(
+                machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cig=self._in_mouth())
+            )
+        assert [type(e) for e in events] == [SmokingStarted]
+        assert machine.state is SmokingState.SMOKING
+
+    def test_香烟在手上且手近嘴_确认(self) -> None:
+        """烟在手+手近嘴（夹烟送嘴）：位置锁定检出达标 + 手势佐证 → 确认。"""
+        machine = _make_machine()
+        events: list[object] = []
+        for i in range(3):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(machine.update(signal, BASE + i * 0.5, cig=self._in_hand()))
+        assert [type(e) for e in events] == [SmokingStarted]
+
+    def test_香烟放桌上_不锁位置_不确认(self) -> None:
+        """用户规则：香烟出现在画面（桌上）但不在手/嘴 → 绝不确认抽烟。"""
+        machine = _make_machine(cig_in_mouth_confirm_frames=2)
+        events: list[object] = []
+        desk = CigaretteSignal(visible=True, in_mouth=False, in_hand=False)  # 位置未锁定
+        for i in range(20):
+            signal = SmokingSignal(hit=False, index_near=(i == 0))
+            events.extend(machine.update(signal, BASE + i * 0.5, cig=desk))
+        assert events == []
+        assert machine.state is SmokingState.IDLE
+
+    def test_evaluate_cigarette_框在嘴里_锁定位(self) -> None:
+        mouth = Box(100, 100, 140, 130)
+        cig_box = Box(115, 108, 128, 120)  # 中心(121.5,114) 在嘴部内
+        sig = evaluate_cigarette([cig_box], PoseFeatures(mouth_box=mouth), _config())
+        assert sig.in_mouth is True and sig.position_locked is True
+
+    def test_evaluate_cigarette_桌上_不锁定位(self) -> None:
+        mouth = Box(100, 100, 140, 130)
+        hand = HandFeatures(
+            wrist=(110, 120), thumb_tip=(108, 108), index_tip=(112, 110), middle_tip=(0, 0)
+        )
+        cig_box = Box(400, 500, 420, 520)  # 远离嘴和手 → 桌上
+        sig = evaluate_cigarette(
+            [cig_box], PoseFeatures(mouth_box=mouth, hands=[hand]), _config()
+        )
+        assert sig.visible is True and sig.in_mouth is False and sig.in_hand is False
+        assert sig.position_locked is False

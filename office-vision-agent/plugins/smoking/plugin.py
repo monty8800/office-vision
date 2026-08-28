@@ -10,7 +10,14 @@ from collections.abc import Sequence
 from dataclasses import fields
 from typing import Any
 
-from detector import SmokingConfig, SmokingSessionMachine, SmokingSignal, evaluate_frame
+from detector import (
+    CigaretteSignal,
+    SmokingConfig,
+    SmokingSessionMachine,
+    SmokingSignal,
+    evaluate_cigarette,
+    evaluate_frame,
+)
 
 from agent.events.types import Event
 from agent.vision.behavior.base import BaseBehaviorDetector
@@ -40,16 +47,18 @@ class SmokingDetector(BaseBehaviorDetector):
         signal = evaluate_frame(context.pose, self._smoking_config)
         self._last_signal = signal
         self._last_timestamp = context.frame.timestamp
-        # 自训练香烟检测框作为强证据（无模型时 detections 里永远不会有 cigarette）
-        cigarette_visible = any(d.label == "cigarette" for d in context.detections)
-        self._last_cigarette_visible = cigarette_visible
-        # 行为分类作为第三重确认通道（smoking-cls），降低香烟误检
+        # 香烟目标框 + 位置判据：烟在嘴里或手上才算抽烟，放桌上不算
+        cig_boxes = [d.box for d in context.detections if d.label == "cigarette"]
+        cig = evaluate_cigarette(cig_boxes, context.pose, self._smoking_config)
+        self._last_cigarette_visible = cig.visible
+        # 行为分类作为第三重确认通道（smoking-cls，默认关），降低香烟误检
         return self._machine.update(
             signal,
             context.frame.timestamp,
-            cigarette_visible,
+            cig.visible,
             context.smoking_cls,
             context.smoking_cls_conf,
+            cig,
         )
 
     def monitor_info(self) -> dict[str, Any]:

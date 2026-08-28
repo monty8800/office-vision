@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from agent.events.types import Event, SmokingEnded, SmokingStarted
-from agent.vision.frame import PoseFeatures
+from agent.vision.frame import Box, PoseFeatures
 
 PLUGIN_NAME = "smoking"
 
@@ -61,7 +61,12 @@ class SmokingConfig:
     cigarette_min_suspect_seconds: float = 1.0
     cigarette_memory_seconds: float = 3.0  # 检出后多久内视为有效证据
     cigarette_min_gesture_frames: int = 1  # 独立通道所需的最少食指近嘴帧数（防误检）
-    # --- 行为分类确认通道（smoking-cls，抑制香烟误检）---
+    # --- 香烟位置判据（用户规则：烟在手中或嘴里才算抽烟，放桌上不算）---
+    # 香烟框中心须落入「嘴部外扩区」多少次（滚动窗口内）视为"在嘴里"的强证据
+    cig_in_mouth_confirm_frames: int = 2
+    # 香烟框中心距"近嘴的手"关键点的最大距离（相对嘴部尺寸）
+    cig_in_hand_proximity: float = 2.0
+    # --- 行为分类确认通道（smoking-cls，默认关闭：模型不可靠，被位置规则取代）---
     classifier_confirm_frames: int = 0  # 窗口内分类为 smoking 的最少帧数（0=关闭该通道）
     classifier_min_conf: float = 0.6  # 判定为 smoking 所需的最小分类置信度
 
@@ -82,8 +87,64 @@ class SmokingSignal:
     wrist_y: float | None = None
 
 
+@dataclass(frozen=True)
+class CigaretteSignal:
+    """单帧香烟检出 + 位置判据（用户规则：烟在手中/嘴里才算抽烟）。
+
+    - visible:     画面是否检出香烟（诊断用）
+    - in_mouth:    香烟框中心落入嘴部外扩区 → 在嘴里
+    - in_hand:     香烟紧挨一只"近嘴的手" → 在手上（被送入嘴边）
+    """
+
+    visible: bool = False
+    in_mouth: bool = False
+    in_hand: bool = False
+
+    @property
+    def position_locked(self) -> bool:
+        """香烟是否锁定在「手/嘴」位置（放桌上/画面其他位置 = 不算）。"""
+        return self.in_mouth or self.in_hand
+
+
 def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _box_center(box: Box) -> tuple[float, float]:
+    return (box.x1 + box.x2) / 2.0, (box.y1 + box.y2) / 2.0
+
+
+def evaluate_cigarette(
+    cig_boxes: list[Box] | None, pose: PoseFeatures, config: SmokingConfig
+) -> CigaretteSignal:
+    """判定香烟是否「在嘴里」或「在手上」；都不是则视为画面里但未抽（桌上香烟）。
+
+    在嘴里只依赖嘴部信息（脸上叼着烟即算，不要求手可见）；在手上需"近嘴的手"。
+    """
+    if not cig_boxes:
+        return CigaretteSignal(visible=False)
+    visible = True
+    if pose.mouth_box is None:
+        # 无人脸：无嘴部可锁定，保守视为"在手上的送嘴"待定（交给手势通道）
+        return CigaretteSignal(visible=visible)
+    region = pose.mouth_box.expand(config.mouth_region_expand)
+    in_mouth = any(region.contains(*_box_center(b)) for b in cig_boxes)
+    mouth_size = max(pose.mouth_box.width, pose.mouth_box.height)
+    in_hand = False
+    for hand in pose.hands:
+        if not region.contains(*hand.index_tip):
+            continue  # 这只手不在嘴旁，不可能是"夹烟送嘴"
+        hand_pts = (hand.wrist, hand.index_tip, hand.thumb_tip)
+        for b in cig_boxes:
+            if any(
+                _distance(_box_center(b), p) < mouth_size * config.cig_in_hand_proximity
+                for p in hand_pts
+            ):
+                in_hand = True
+                break
+        if in_hand:
+            break
+    return CigaretteSignal(visible=visible, in_mouth=in_mouth, in_hand=in_hand)
 
 
 def evaluate_frame(pose: PoseFeatures, config: SmokingConfig) -> SmokingSignal:
@@ -141,8 +202,10 @@ class SmokingSessionMachine:
         self._last_peak: float | None = None
         self._round_trips = 0
         self._last_cigarette_seen: float | None = None  # 最近一次检出香烟的时刻
-        # 香烟独立通道：滚动窗口内的检出时刻序列
+        # 香烟独立通道：滚动窗口内的"位置锁定"检出时刻序列（在嘴/在手才算）
         self._cig_times: list[float] = []
+        # 香烟"在嘴里"的强证据时刻序列（无需手势即确认）
+        self._mouth_times: list[float] = []
         # 手势佐证：窗口内食指近嘴的时刻序列（独立通道防误检用）
         self._gesture_times: list[float] = []
         # 行为分类确认：窗口内分类为 smoking 的时刻序列（抑制香烟误检）
@@ -173,6 +236,7 @@ class SmokingSessionMachine:
                 else None
             ),
             "cigarette_hits_recent": len(self._cig_times),
+            "mouth_hits_recent": len(self._mouth_times),
             "gesture_frames_recent": len(self._gesture_times),
             "classification_frames_recent": len(self._cls_times),
         }
@@ -188,6 +252,7 @@ class SmokingSessionMachine:
         self._round_trips = 0
         self._last_cigarette_seen = None
         self._cig_times = []
+        self._mouth_times = []
         self._gesture_times = []
         self._cls_times = []
 
@@ -198,14 +263,24 @@ class SmokingSessionMachine:
         cigarette_visible: bool = False,
         smoking_cls: str | None = None,
         smoking_cls_conf: float = 0.0,
+        cig: CigaretteSignal | None = None,
     ) -> list[Event]:
         events: list[Event] = []
-        if cigarette_visible:
+        if cig is None:
+            # 向后兼容：未传位置信号时，仅当检出香烟才视为"位置锁定(在手上送嘴)"
+            cig = CigaretteSignal(
+                visible=cigarette_visible, in_mouth=False, in_hand=cigarette_visible
+            )
+        if cig.position_locked:
             self._last_cigarette_seen = timestamp
             self._cig_times.append(timestamp)
+        if cig.in_mouth:
+            self._mouth_times.append(timestamp)
         window = self._config.cigarette_confirm_window_seconds
         while self._cig_times and timestamp - self._cig_times[0] > window:
             self._cig_times.pop(0)
+        while self._mouth_times and timestamp - self._mouth_times[0] > window:
+            self._mouth_times.pop(0)
         if signal.index_near:
             self._gesture_times.append(timestamp)
         while self._gesture_times and timestamp - self._gesture_times[0] > window:
@@ -228,9 +303,23 @@ class SmokingSessionMachine:
             if ended is not None:
                 events.append(ended)
 
-        # 香烟独立通道：窗口内检出达标 + 最低手势佐证 + 行为分类闸门（抑制误检）
+        # 香烟"在嘴里"强确认：窗口内香烟框落入嘴部区达阈即确认（无需手势，抽烟最直接证据）
         if (
-            cigarette_visible
+            self._state is not SmokingState.SMOKING
+            and len(self._mouth_times) >= self._config.cig_in_mouth_confirm_frames
+        ):
+            self._state = SmokingState.SMOKING
+            if self._session_start <= 0.0:
+                self._session_start = self._mouth_times[0]
+            self._last_hit = timestamp
+            events.append(
+                SmokingStarted(device_id=self._device_id, occurred_at=_to_datetime(timestamp))
+            )
+            return events
+
+        # 香烟独立通道：窗口内"位置锁定"(在嘴/在手)检出达标 + 手势佐证（抑制误检）
+        if (
+            cig.position_locked
             and self._state is not SmokingState.SMOKING
             and len(self._cig_times) >= self._config.cigarette_confirm_frames
             and timestamp - self._cig_times[0] >= self._config.cigarette_min_seconds
