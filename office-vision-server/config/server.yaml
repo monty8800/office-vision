@@ -16,6 +16,9 @@ database:
 events:
   dedup_window_seconds: 5        # 同事件去重窗口（网络重试场景）
 
+logs:
+  retention_days: 14             # 客户端日志保留天数（超期自动清理）
+
 automation:
   enabled: false                 # 阶段后续：Home Assistant 联动
   home_assistant:

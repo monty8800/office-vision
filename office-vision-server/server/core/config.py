@@ -36,6 +36,11 @@ class EventsSection:
 
 
 @dataclass(frozen=True)
+class LogsSection:
+    retention_days: int = 14
+
+
+@dataclass(frozen=True)
 class HomeAssistantSection:
     url: str = "http://localhost:8123"
     token: str = ""
@@ -68,6 +73,7 @@ class ServerConfig:
     server: ServerSection = field(default_factory=ServerSection)
     database: DatabaseSection = field(default_factory=DatabaseSection)
     events: EventsSection = field(default_factory=EventsSection)
+    logs: LogsSection = field(default_factory=LogsSection)
     automation: AutomationSection = field(default_factory=AutomationSection)
     users: UsersSection = field(default_factory=UsersSection)
 
@@ -107,6 +113,7 @@ def load_config(path: str | Path | None = None) -> ServerConfig:
         server=_typed(ServerSection, _section(raw, "server")),
         database=_typed(DatabaseSection, _section(raw, "database")),
         events=_typed(EventsSection, _section(raw, "events")),
+        logs=_typed(LogsSection, _section(raw, "logs")),
         automation=AutomationSection(
             enabled=bool(automation_raw.get("enabled", False)),
             home_assistant=_typed(

@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from loguru import logger
 
 from server.api.routes import events as event_routes
+from server.api.routes import logs as logs_routes
 from server.api.routes import stats as stats_routes
 from server.core.config import ServerConfig, load_config
 from server.core.logging import setup_logging
@@ -47,6 +48,7 @@ def create_app(database_url: str, config: ServerConfig | None = None) -> FastAPI
         lifespan=lifespan,
     )
     app.include_router(event_routes.router)
+    app.include_router(logs_routes.router)
     app.include_router(stats_routes.router)
 
     @app.get("/api/health", tags=["system"])
