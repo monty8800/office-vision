@@ -56,6 +56,22 @@ export interface HourBucket {
   total_seconds: number;
 }
 
+// ---------- 客户端日志 ----------
+
+export interface LogChunkMeta {
+  chunk_id: string;
+  device_id: string;
+  component: string;
+  trigger: "periodic" | "error";
+  logged_at: string;
+  received_at: string;
+  size: number;
+}
+
+export interface LogChunkDetail extends LogChunkMeta {
+  content: string;
+}
+
 // 行为注册表（展示层）：新增行为（如喝水 drinking / 看手机 phone_use）
 // 只需在此追加一行，并在 Server 的 ENDED_EVENT_BEHAVIORS 注册事件映射。
 export interface BehaviorMeta {
@@ -103,6 +119,12 @@ export const serverApi = {
     getJson<{ date: string; hours: HourBucket[] }>(
       `/api/behaviors/${behavior}/hourly${deviceParam(deviceId, "?")}`
     ),
+  logs: (limit = 50, offset = 0, deviceId?: string | null) =>
+    getJson<{ total: number; chunks: LogChunkMeta[] }>(
+      `/api/logs?limit=${limit}&offset=${offset}${deviceParam(deviceId)}`
+    ),
+  logDetail: (chunkId: string) =>
+    getJson<LogChunkDetail>(`/api/logs/${encodeURIComponent(chunkId)}`),
 };
 
 export function formatDuration(seconds: number): string {

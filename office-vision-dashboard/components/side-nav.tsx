@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: "/trends", label: "行为分析", icon: "▤" },
   { href: "/timeline", label: "事件时间轴", icon: "≣" },
   { href: "/status", label: "系统状态", icon: "⚙" },
+  { href: "/logs", label: "客户端日志", icon: "≡" },
   { href: "/monitor", label: "实时监控", icon: "⌖" },
 ];
 

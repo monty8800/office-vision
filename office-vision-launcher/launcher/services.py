@@ -17,6 +17,7 @@ import psutil
 
 from .config import ServiceSpec
 from .deploy import Deployer
+from .log_upload import deploy_header, upload_deploy_log
 
 _IS_WINDOWS = sys.platform == "win32"
 
@@ -250,21 +251,51 @@ class ServiceManager:
 
         兜底捕获所有异常：任何未预期的异常（非 DeployError/OSError）若让
         部署线程静默退出，托盘会永远停在“正在部署环境”且无任何提示。
+        过程记录（transcript）随步骤累积，结束点上报 Server——初次安装阶段
+        Agent 尚不存在，这是远程排查部署失败的唯一日志来源。
         """
         assert self.deployer is not None
+        transcript: list[str] = [deploy_header(self.deployer.repo) + "\n"]
+
+        def record(message: str) -> None:
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            transcript.append(f"[{stamp}] {message}")
+
+        def on_step(label: str) -> None:
+            self.deploy_step = label
+            record(f"{label}\n")
+
         self._append_log(svc, "检测到环境未部署，开始自动部署…\n")
+        record("检测到环境未部署，开始自动部署…\n")
         try:
-            self.deployer.run(on_step=lambda label: setattr(self, "deploy_step", label))
+            self.deployer.run(on_step=on_step)
         except Exception as exc:  # noqa: BLE001
             self.deploy_state = "failed"
             reason = str(exc) or type(exc).__name__
             self.deploy_reason = reason
             self._append_log(svc, f"自动部署失败：{reason}\n")
+            record(f"自动部署失败：{reason}\n")
+            self._upload_deploy_log(svc, transcript, success=False)
             return
         self.deploy_state = "idle"
         self.deploy_step = ""
         self._append_log(svc, "环境部署完成，启动服务\n")
+        record("环境部署完成\n")
+        self._upload_deploy_log(svc, transcript, success=True)
         self.start(svc.spec.name)
+
+    def _upload_deploy_log(
+        self, svc: ManagedService, transcript: list[str], *, success: bool
+    ) -> None:
+        """部署记录上报（best-effort）：失败仅写本地日志，不影响部署结果。"""
+        accepted = upload_deploy_log(
+            self.server_url, svc.spec.workdir, transcript, success=success
+        )
+        state = "成功" if success else "失败"
+        if accepted:
+            self._append_log(svc, f"部署{state}记录已上报服务器\n")
+        else:
+            self._append_log(svc, f"部署{state}记录上报未成功（仅留存本地日志）\n")
 
     def _sync_agent_config(self, svc: ManagedService) -> None:
         """启动前把托盘应用配置的服务地址同步到 agent.yaml（仅存在时生效）。"""
