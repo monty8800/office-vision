@@ -9,6 +9,9 @@ import {
   type BehaviorSession,
   type BehaviorSummary,
   type HourBucket,
+  type SittingDay,
+  type SittingSession,
+  type SittingToday,
   type TrendDay,
 } from "@/lib/server-api";
 import { Card, EmptyState, Stat } from "@/components/ui";
@@ -49,6 +52,167 @@ function formatHm(iso: string): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+// 坐席与工作时长面板：进入/离开时间 + 每日在岗时长与离开次数
+function SittingPanel({ device }: { device?: string | null }) {
+  const [today, setToday] = useState<SittingToday | null>(null);
+  const [daily, setDaily] = useState<SittingDay[]>([]);
+  const [sessions, setSessions] = useState<SittingSession[]>([]);
+  const [days, setDays] = useState<7 | 30>(7);
+  const [error, setError] = useState<string | null>(null);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, SittingSession[]>();
+    for (const s of sessions) {
+      const day = localDayStr(new Date(s.start_time));
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(s);
+    }
+    return [...map.entries()];
+  }, [sessions]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const [t, d, s] = await Promise.all([
+          serverApi.sittingToday(device),
+          serverApi.sittingDaily(days, device),
+          serverApi.sittingSessions(50, device),
+        ]);
+        if (active) {
+          setToday(t);
+          setDaily(d.days);
+          setSessions(s.items);
+          setError(null);
+        }
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      }
+    };
+    load();
+    const timer = setInterval(load, 15000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [days, device]);
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-900/60 bg-zinc-900/40 p-5">
+        <p className="text-sm text-red-400">坐席数据加载失败：{error}</p>
+      </div>
+    );
+  }
+  if (!today) return <Card><EmptyState text="加载中…" /></Card>;
+
+  const maxSec = Math.max(1, ...daily.map((d) => d.total_seconds));
+
+  return (
+    <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">坐席与工作时长</h2>
+          <p className="text-xs text-zinc-500">
+            进入/离开画面时间 · 每日在岗时长与离开次数（离开 &lt;60s 视为连续在岗）
+          </p>
+        </div>
+        <div className="flex gap-1 rounded-lg bg-zinc-800/60 p-1">
+          {([7, 30] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              className={`rounded px-2 py-0.5 text-xs transition-colors ${
+                days === d ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {d} 天
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat
+          label="今日坐席时长"
+          value={formatDuration(today.total_seconds)}
+          hint={`平均 ${formatDuration(today.avg_seconds)} / 次`}
+        />
+        <Stat label="在座次数" value={today.sessions} hint={`今日进入 ${today.sessions} 次`} />
+        <Stat label="离开次数" value={today.leaves} hint={`离开画面 ${today.leaves} 次`} />
+        <Stat
+          label="当前状态"
+          value={today.now_sitting ? "在座中" : "已离开"}
+          hint={
+            today.now_sitting && today.current_session_start
+              ? `本次自 ${formatHm(today.current_session_start)}`
+              : undefined
+          }
+        />
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-zinc-400">每日在岗时长（近 {days} 天）</p>
+        <div className="flex h-24 items-end gap-[3px]">
+          {daily.map((d) => (
+            <div
+              key={d.day}
+              className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+              title={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} · 离开 ${d.leaves}`}
+            >
+              <div
+                className={`w-full rounded-t-sm ${
+                  d.total_seconds > 0 ? "bg-sky-500/70" : "bg-zinc-800"
+                }`}
+                style={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
+              />
+              {days === 7 || new Date(`${d.day}T00:00:00`).getDate() % 5 === 0 ? (
+                <span className="text-[9px] tabular-nums text-zinc-600">{d.day.slice(5)}</span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-xs font-semibold text-zinc-400">
+          进出记录（最近 {sessions.length} 条）
+        </p>
+        {grouped.length === 0 ? (
+          <EmptyState text="暂无记录" />
+        ) : (
+          <div className="space-y-3">
+            {grouped.map(([day, list]) => (
+              <div key={day}>
+                <p className="mb-1 text-xs text-zinc-500">
+                  {dayLabel(day)} <span className="text-zinc-600">· {list.length} 段</span>
+                </p>
+                <ul className="divide-y divide-zinc-800/60">
+                  {list.map((s, i) => (
+                    <li key={i} className="flex items-center gap-3 py-1.5 text-sm">
+                      <span className="w-44 shrink-0 tabular-nums text-zinc-300">
+                        {formatHm(s.start_time)} – {s.end_time ? formatHm(s.end_time) : "进行中"}
+                      </span>
+                      <span className="w-20 shrink-0 tabular-nums text-zinc-400">
+                        {formatDuration(s.duration_seconds)}
+                      </span>
+                      {!s.end_time && (
+                        <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                          在座中
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // useSearchParams 需要 Suspense 边界（仅多设备时筛选器可见）
@@ -150,6 +314,8 @@ function AnalysisContent() {
           </div>
         </div>
       </header>
+
+      <SittingPanel device={device} />
 
       {error ? (
         <Card className="border-red-900/60">

@@ -56,6 +56,35 @@ export interface HourBucket {
   total_seconds: number;
 }
 
+// ---------- 坐席（在岗/离开）----------
+
+export interface SittingToday {
+  day: string;
+  total_seconds: number;
+  sessions: number;
+  leaves: number;
+  avg_seconds: number;
+  now_sitting: boolean;
+  current_session_start: string | null;
+  first_sit_time: string | null;
+  last_leave_time: string | null;
+  last_leave_duration: number | null;
+}
+
+export interface SittingDay {
+  day: string;
+  total_seconds: number;
+  sessions: number;
+  leaves: number;
+  avg_seconds: number;
+}
+
+export interface SittingSession {
+  start_time: string;
+  end_time: string | null; // null = 进行中（仍在座）
+  duration_seconds: number;
+}
+
 // ---------- 客户端日志 ----------
 
 export interface LogChunkMeta {
@@ -118,6 +147,16 @@ export const serverApi = {
   behaviorHourly: (behavior: string, deviceId?: string | null) =>
     getJson<{ date: string; hours: HourBucket[] }>(
       `/api/behaviors/${behavior}/hourly${deviceParam(deviceId, "?")}`
+    ),
+  sittingToday: (deviceId?: string | null) =>
+    getJson<SittingToday>(`/api/sitting/today${deviceParam(deviceId, "?")}`),
+  sittingDaily: (days = 7, deviceId?: string | null) =>
+    getJson<{ days: SittingDay[] }>(
+      `/api/sitting/daily?days=${days}${deviceParam(deviceId)}`
+    ),
+  sittingSessions: (limit = 50, deviceId?: string | null) =>
+    getJson<{ items: SittingSession[]; limit: number; offset: number }>(
+      `/api/sitting/sessions?limit=${limit}${deviceParam(deviceId)}`
     ),
   logs: (limit = 50, offset = 0, deviceId?: string | null) =>
     getJson<{ total: number; chunks: LogChunkMeta[] }>(
