@@ -21,7 +21,7 @@ detector:
   person_only: true              # 人形过滤（不影响香烟第二模型）
   # 自训练香烟检测（yolo-training 项目产出）；权重缺失时自动降级为仅人形检测
   cigarette_weights: "../yolo-training/weights/cigarette-best.pt"
-  cigarette_confidence: 0.5      # 香烟小目标，阈值高于人形；0.5 可抑制面/眼镜/笔误检
+  cigarette_confidence: 0.65     # 香烟小目标，阈值高于人形；抬到 0.65 抑制"指缝/键盘细影"等低置信度误检(实测0.54假阳性)
   # 自训练 smoking 行为分类（YOLO-cls）；作为第三重确认通道抑制香烟误检，缺失则降级
   smoking_cls_weights: "../yolo-training/weights/smoking-cls-best.pt"
   smoking_cls_confidence: 0.6    # 判定为 smoking 的最小分类置信度
