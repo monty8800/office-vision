@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
   BEHAVIORS,
   formatDuration,
@@ -54,6 +54,25 @@ function formatHm(iso: string): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+// 带悬停 tooltip 的柱：鼠标移入即在该柱上方显示数值（替代不可靠的原生 title）
+function BarBox({
+  tip,
+  barClass,
+  barStyle,
+}: {
+  tip: string;
+  barClass: string;
+  barStyle?: CSSProperties;
+}) {
+  return (
+    <div className={`group relative ${barClass}`} style={barStyle}>
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-700/70 bg-zinc-900/95 px-2 py-1 text-[11px] text-zinc-100 shadow-lg transition-opacity duration-100 group-hover:opacity-100">
+        {tip}
+      </div>
+    </div>
+  );
 }
 
 // ============ 坐席时长 Tab（2 栏） ============
@@ -154,13 +173,13 @@ function SittingTab({ device }: { device?: string | null }) {
               <div
                 key={d.day}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-                title={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} · 离开 ${d.leaves}`}
               >
-                <div
-                  className={`w-full rounded-t-sm ${
+                <BarBox
+                  tip={`${d.day} 坐席 ${formatDuration(d.total_seconds)} · 进入 ${d.sessions} 次 · 离开 ${d.leaves} 次`}
+                  barClass={`w-full rounded-t-sm ${
                     d.total_seconds > 0 ? "bg-sky-500/70" : "bg-zinc-800"
                   }`}
-                  style={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
+                  barStyle={{ height: `${Math.max((d.total_seconds / maxSec) * 100, 2)}%` }}
                 />
                 {days === 7 || new Date(`${d.day}T00:00:00`).getDate() % 5 === 0 ? (
                   <span className="text-[9px] tabular-nums text-zinc-600">{d.day.slice(5)}</span>
@@ -317,16 +336,16 @@ function SmokingTab({ device }: { device?: string | null }) {
               <div
                 key={bucket.hour}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
-                title={`${bucket.hour}:00 ${bucket.count} 次 / ${formatDuration(bucket.total_seconds)}`}
               >
                 {bucket.count > 0 ? (
                   <span className="text-[10px] tabular-nums text-zinc-400">{bucket.count}</span>
                 ) : null}
-                <div
-                  className={`w-full rounded-t-sm ${
+                <BarBox
+                  tip={`${bucket.hour}:00 共 ${bucket.count} 次 · ${formatDuration(bucket.total_seconds)}`}
+                  barClass={`w-full rounded-t-sm ${
                     bucket.count > 0 ? "bg-red-500/70" : "bg-zinc-800"
                   }`}
-                  style={{ height: `${Math.max((bucket.count / maxHourly) * 100, 2)}%` }}
+                  barStyle={{ height: `${Math.max((bucket.count / maxHourly) * 100, 2)}%` }}
                 />
                 <span className="text-[9px] tabular-nums text-zinc-600">{bucket.hour}</span>
               </div>
@@ -361,20 +380,21 @@ function SmokingTab({ device }: { device?: string | null }) {
               <div
                 key={day.day}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1.5"
-                title={`${day.day} ${day.count} 次 / ${formatDuration(day.total_seconds)}`}
               >
                 <div className="flex w-full flex-1 items-end justify-center gap-[2px]">
-                  <div
-                    className={`w-1/2 max-w-4 rounded-t-sm ${
+                  <BarBox
+                    tip={`${day.day} · ${day.count} 次`}
+                    barClass={`w-1/2 max-w-4 rounded-t-sm ${
                       day.count > 0 ? "bg-emerald-500/70" : "bg-zinc-800"
                     }`}
-                    style={{ height: `${Math.max((day.count / maxCount) * 100, 2)}%` }}
+                    barStyle={{ height: `${Math.max((day.count / maxCount) * 100, 2)}%` }}
                   />
-                  <div
-                    className={`w-1/2 max-w-4 rounded-t-sm ${
+                  <BarBox
+                    tip={`${day.day} · 时长 ${formatDuration(day.total_seconds)}`}
+                    barClass={`w-1/2 max-w-4 rounded-t-sm ${
                       day.total_seconds > 0 ? "bg-amber-500/70" : "bg-zinc-800"
                     }`}
-                    style={{ height: `${Math.max((day.total_seconds / maxSeconds) * 100, 2)}%` }}
+                    barStyle={{ height: `${Math.max((day.total_seconds / maxSeconds) * 100, 2)}%` }}
                   />
                 </div>
                 {days === 7 || i === data.trend.length - 1 || i % 5 === 0 ? (
