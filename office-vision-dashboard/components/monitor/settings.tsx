@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   type AnnotateBox,
   type MonitorApi,
-  type MonitorEventItem,
   type OverlayKey,
   type OverlayState,
   type ReplayMeta,
@@ -120,66 +119,6 @@ export function ReplayPanel({ api, replays }: { api: MonitorApi; replays: Replay
           </ul>
         </div>
       )}
-    </Card>
-  );
-}
-
-// ---- Snapshot + Label Mode（预留） ----
-
-export function SnapshotPanel({
-  api,
-  latestEvent,
-}: {
-  api: MonitorApi;
-  latestEvent: MonitorEventItem | null;
-}) {
-  const [message, setMessage] = useState<string | null>(null);
-  const save = async () => {
-    try {
-      const result = await api.saveSnapshot();
-      setMessage(`已保存：${result.image.split("/").pop()}`);
-    } catch (e) {
-      setMessage(`保存失败：${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-  const label = async (verdict: "correct" | "wrong") => {
-    if (!latestEvent) return;
-    try {
-      await api.label(latestEvent.event_type, verdict);
-      setMessage(`已标注 ${verdict === "correct" ? "✔ 正确" : "✖ 错误"}`);
-    } catch (e) {
-      setMessage(`标注失败：${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-  return (
-    <Card title="快照与标注">
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={save}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium hover:bg-emerald-500"
-        >
-          一键截图
-        </button>
-        <button
-          type="button"
-          onClick={() => label("correct")}
-          className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700"
-        >
-          ✔ 正确
-        </button>
-        <button
-          type="button"
-          onClick={() => label("wrong")}
-          className="rounded-md bg-zinc-800 px-3 py-1.5 text-xs hover:bg-zinc-700"
-        >
-          ✖ 错误
-        </button>
-      </div>
-      {message ? <p className="mt-2 text-xs text-zinc-400">{message}</p> : null}
-      <p className="mt-2 text-[11px] text-zinc-600">
-        Label Mode 接口已预留：人工确认识别结果，未来自动生成训练数据集。
-      </p>
     </Card>
   );
 }

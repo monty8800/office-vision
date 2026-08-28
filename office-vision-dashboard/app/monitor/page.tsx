@@ -23,7 +23,6 @@ import {
   AnnotationPanel,
   OverlayControls,
   ReplayPanel,
-  SnapshotPanel,
 } from "@/components/monitor/settings";
 
 export default function MonitorPage() {
@@ -117,8 +116,6 @@ export default function MonitorPage() {
     };
   }, [api]);
 
-  const latestEvent = events.length > 0 ? events[events.length - 1] : null;
-
   return (
     <div className="p-6">
       <header className="mb-6 flex items-center justify-between">
@@ -204,9 +201,8 @@ export default function MonitorPage() {
           )}
         </Card>
 
-        {/* 事件回放 + 快照与标注 */}
+        {/* 事件回放 */}
         <ReplayPanel api={api} replays={replays} />
-        <SnapshotPanel api={api} latestEvent={latestEvent} />
 
         {/* 实时日志（整行宽，不落盘） */}
         <LogPanel logs={logs} />

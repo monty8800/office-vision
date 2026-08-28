@@ -112,14 +112,6 @@ export function createMonitorApi(basePath = "/agent-monitor") {
     replays: () => getJson<{ replays: ReplayMeta[] }>(`${basePath}/replays`),
     setOverlays: (changes: Partial<OverlayState>) =>
       postJson<OverlayState>(`${basePath}/overlays`, changes),
-    saveSnapshot: () =>
-      postJson<{ image: string; meta: string }>(`${basePath}/snapshot`, {}),
-    label: (eventId: string, verdict: "correct" | "wrong", note = "") =>
-      postJson<Record<string, unknown>>(`${basePath}/labels`, {
-        event_id: eventId,
-        verdict,
-        note,
-      }),
     annotate: (payload: AnnotatePayload) =>
       postJson<{ saved_image: string; saved_json: string; boxes: number; negative: boolean }>(
         `${basePath}/annotate`,
