@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 from agent.events.types import (
@@ -33,6 +34,10 @@ class PresenceSettings:
     sleep_after_seconds: float = 300.0
     resume_wait_seconds: float = 3.0
     wakeup_check_seconds: float = 300.0  # 深度休眠（摄像头已关）时，每隔多久唤醒查一次人
+    # --- 凌晨关闭窗口（本地时间）---
+    off_hours_start: str = "00:00"          # 窗口开始（如 00:00）
+    off_hours_end: str = "08:00"            # 窗口结束（8 点准时开启）
+    off_hours_idle_seconds: float = 3600.0  # 窗口内无人连续多久后关摄像头（1 小时）
 
 
 class PresenceState(StrEnum):
@@ -77,6 +82,46 @@ class PresenceManager:
         """恢复到 Working 前，需要人员持续在场的秒数。"""
         return self._settings.resume_wait_seconds
 
+    # ---- 凌晨关闭窗口（时间感知） ----
+
+    @staticmethod
+    def _hhmm(s: str) -> int:
+        try:
+            h, m = s.split(":", 1)[:2]
+            return int(h) * 60 + int(m)
+        except Exception:
+            return 0
+
+    def _in_off_hours(self, timestamp: float) -> bool:
+        """当前本地时间是否落在凌晨关闭窗口内。"""
+        local = datetime.fromtimestamp(timestamp).astimezone()
+        cur = local.hour * 60 + local.minute
+        return self._hhmm(self._settings.off_hours_start) <= cur < self._hhmm(
+            self._settings.off_hours_end
+        )
+
+    def sleep_after(self, timestamp: float) -> float:
+        """无人连续多久后进入休眠：凌晨窗口用 off_hours_idle_seconds，其余用 sleep_after_seconds。"""
+        return (
+            self._settings.off_hours_idle_seconds
+            if self._in_off_hours(timestamp)
+            else self._settings.sleep_after_seconds
+        )
+
+    def past_off_hours_end(self, timestamp: float) -> bool:
+        """当前本地时间是否已过凌晨窗口结束点（如是否已到 08:00）。"""
+        local = datetime.fromtimestamp(timestamp).astimezone()
+        cur = local.hour * 60 + local.minute
+        return cur >= self._hhmm(self._settings.off_hours_end)
+
+    def force_wake(self) -> list[Event]:
+        """外部（如 08:00）强制唤醒：SLEEPING → AWAY，摄像头保持开启等待人。"""
+        if self._state is PresenceState.SLEEPING:
+            self._state = PresenceState.AWAY
+            self._return_first_seen = None
+            return [PresenceResumed(device_id=self._device_id)]
+        return []
+
     def update(self, person_present: bool, timestamp: float) -> list[Event]:
         """喂入单帧人员判定，返回本帧产出的 Presence 事件。"""
         if self._entry_time is None:
@@ -97,7 +142,7 @@ class PresenceManager:
         if present:
             self._state = PresenceState.WORKING
             return [SeatOccupied(device_id=self._device_id)]
-        if timestamp - (self._entry_time or timestamp) >= self._settings.sleep_after_seconds:
+        if timestamp - (self._entry_time or timestamp) >= self.sleep_after(timestamp):
             self._state = PresenceState.SLEEPING
             return [PresenceSleeping(device_id=self._device_id)]
         return []
@@ -112,7 +157,7 @@ class PresenceManager:
         if present:
             self._state = PresenceState.WORKING
             return [SeatOccupied(device_id=self._device_id)]
-        if timestamp - self._last_seen >= self._settings.sleep_after_seconds:
+        if timestamp - self._last_seen >= self.sleep_after(timestamp):
             self._state = PresenceState.SLEEPING
             return [PresenceSleeping(device_id=self._device_id)]
         return []

@@ -41,6 +41,9 @@ presence:
   sleep_after_seconds: 300       # 离岗多久后自动休眠（5分钟）
   resume_wait_seconds: 3         # 恢复等待
   wakeup_check_seconds: 300      # 深度休眠(摄像头已关)时每隔多久唤醒查一次人（5分钟）
+  off_hours_start: "00:00"       # 凌晨关闭窗口开始
+  off_hours_end: "08:00"         # 凌晨关闭窗口结束（8点准时开启）
+  off_hours_idle_seconds: 3600   # 窗口内无人连续多久后关摄像头（1小时）
 
 server:
   url: "http://localhost:8000"
