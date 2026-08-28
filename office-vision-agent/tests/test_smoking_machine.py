@@ -181,30 +181,25 @@ class TestCigaretteFusion:
         assert [type(e) for e in events] == [SmokingStarted]
         assert machine.state is SmokingState.SMOKING
 
-    def test_持续检出但无手势佐证_不确认(self) -> None:
-        """笔/手表/五官误检场景：香烟持续高置信度检出但手不在嘴旁 → 阻断。"""
+    def test_检出但未位置锁定_不确认(self) -> None:
+        """桌上/远离手嘴的香烟（未锁定到手/嘴）→ 不确认抽烟。"""
         machine = _make_machine()
         events: list[object] = []
-        for i in range(20):  # 远超确认门槛的持续检出，手势全程无佐证
-            events.extend(
-                machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cigarette_visible=True)
-            )
+        desk = CigaretteSignal(visible=True, in_mouth=False, in_hand=False)  # 未位置锁定
+        for i in range(20):  # 远超确认门槛的持续检出，但烟不在手/嘴旁
+            events.extend(machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cig=desk))
         assert events == []
         assert machine.state is SmokingState.IDLE
 
-    def test_手势佐证超出窗口_不计入(self) -> None:
-        machine = _make_machine(cigarette_confirm_window_seconds=3.0)
-        # 早期一帧食指近嘴，间隔 5s 后才持续检出 → 佐证已过期，不确认
-        machine.update(SmokingSignal(hit=False, index_near=True), BASE)
+    def test_位置锁定检出达标_无需手势_确认(self) -> None:
+        """烟锁定在手/嘴（如手拿烟在胸前）即使无"手近嘴"手势也确认（用户规则：烟在手上=抽烟）。"""
+        machine = _make_machine()
         events: list[object] = []
+        in_hand = CigaretteSignal(visible=True, in_hand=True)
         for i in range(3):
-            events.extend(
-                machine.update(
-                    SmokingSignal(hit=False), BASE + 5.0 + i * 0.5, cigarette_visible=True
-                )
-            )
-        assert events == []
-        assert machine.state is SmokingState.IDLE
+            events.extend(machine.update(SmokingSignal(hit=False), BASE + i * 0.5, cig=in_hand))
+        assert [type(e) for e in events] == [SmokingStarted]
+        assert machine.state is SmokingState.SMOKING
 
     def test_检出次数不足_不确认(self) -> None:
         machine = _make_machine()

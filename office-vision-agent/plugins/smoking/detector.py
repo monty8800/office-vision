@@ -335,13 +335,14 @@ class SmokingSessionMachine:
             )
             return events
 
-        # 香烟独立通道：窗口内"位置锁定"(在嘴/在手)检出达标 + 手势佐证（抑制误检）
+        # 香烟独立通道：窗口内"位置锁定"(在嘴/在手)检出达标即确认。
+        # 香烟位置已由 evaluate_cigarette 限定为烟在嘴/手旁，桌上烟不会 position_locked，
+        # 故不再要求额外的"手近嘴"手势佐证（那会误挡"手拿烟在胸前"的真实抽烟）。
         if (
             cig.position_locked
             and self._state is not SmokingState.SMOKING
             and len(self._cig_times) >= self._config.cigarette_confirm_frames
             and timestamp - self._cig_times[0] >= self._config.cigarette_min_seconds
-            and len(self._gesture_times) >= self._config.cigarette_min_gesture_frames
             and self._classifier_gate_ok()
         ):
             self._state = SmokingState.SMOKING
