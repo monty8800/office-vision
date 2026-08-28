@@ -105,3 +105,41 @@ Agent 依赖摄像头与本地推理，不上云，仍运行在监控点电脑�
 （数据集、标注、训练产物 runs/，权重部署回 Agent）。
 本地开发可继续用 `scripts/service.sh`（tmux）编排三服务；部署到监控点电脑时使用
 `office-vision-launcher` 托盘应用（详见其 README）。
+
+## 当前部署状态与运营（2026-08-29）
+
+### 部署形态
+- **本地 24h 节点**：VM 115 @ 192.168.9.214（Debian 12，4 核 6G），Agent(:8100) +
+  Server(:8000, SQLite) + Dashboard(:3000) 全本地，Logitech C930c 摄像头 USB 直通，
+  systemd 自启（`office-vision-{agent,server,dashboard}.service`）。
+- **训练在 Windows GPU 机**（192.168.9.204，RTX 5070 Ti）：`C:\Users\dsh\office-vision-training\.venv`
+  （uv + Python3.12 + torch cu130 + ultralytics），几分钟一轮。
+- 访问：Dashboard http://192.168.9.214:3000（实时监控 `/monitor`、行为分析 `/trends`）。
+- **⚠️ VM 系统时区必须为 Asia/Shanghai**：server 统计（时段分布/趋势）用 `strftime(..., "localtime")`
+  按 OS 时区取小时，若 VM 是 UTC 会导致时段分布错乱（如凌晨 1 点显示成 17 点）。部署后 `timedatectl set-timezone Asia/Shanghai`。
+
+### 抽烟检测判定（用户规则）
+- **烟在手上 或 在嘴里 = 抽烟**；放桌上（不在手/嘴旁）不算。
+- `smoking/detector.py`：`evaluate_cigarette` 判定香烟位置锁定（烟框与嘴部重叠/落入放大嘴部区 = 在嘴里；
+  靠近任意手 = 在手上），位置锁定检出达标即确认（不要求"手必须近嘴"，避免误挡真实抽烟）。
+- smoking-cls 行为分类模型已弃用（不可靠），由位置规则取代（`classifier_confirm_frames: 0`）。
+- 香烟检测置信度阈值 `cigarette_confidence: 0.5`（抑制面部/眼镜/笔误检）。
+
+### 数据标注 → GPU 训练 → 自动部署（闭环）
+1. 监控页「数据集标注」面板（在实时画面右侧）冻结当前帧 → 拖框标香烟 / 存负样本 →
+   落 `agent/data/annotate/{smoking|normal}/`（labelme JSON）。
+2. `yolo-training/scripts/sync_and_train.sh`：把标注推到 Windows → `labelme2yolo.py` →
+   `train_cigarette.py --finetune`。
+3. 新 `best.pt` 回部署（覆盖 `weights/cigarette-best.pt`）。
+4. 自动标注脚本 `yolo-training/scripts/auto_annotate.py` 可用已有模型批量预标注。
+- 当前香烟检测模型：mAP50 ~98.5–99.4%、P≈0.97–0.98、R≈0.94–0.99（含难负样本训练）。
+
+### 省电：深度休眠 + 凌晨关闭窗口（presence）
+- 无人（含启动即无人）超时进入 SLEEPING → `camera.stop()` 关闭摄像头（省电/减压）。
+- 深度休眠定时唤醒：每 `wakeup_check_seconds`（300s）开摄像头查人，有人恢复 / 无人再关。
+- **凌晨窗口** `off_hours_*`（默认 00:00–08:00）：窗口内无人连续 `off_hours_idle_seconds`（3600s）才关；
+  **08:00 准时开启**（`force_wake` 强制唤醒）。
+
+### 后续规划
+- 加入**喝水**、**玩手机**行为的事件识别（沿用插件化架构：新增 `plugins/` 行为插件 +
+  events handlers 映射表，行为分析页按 `BEHAVIORS` 注册表扩展）。
