@@ -45,7 +45,7 @@ echo "   已推送。Windows 现有 smoking=$(sshpass -p "$WIN_PASS" ssh -o Stri
 # 只在确认源已全部同步到 Windows 时才删除，避免丢数据；KEEP_VM_ANNOT=1 可跳过。
 echo "== 2b) 清理 VM115 标注（同步完成后）=="
 SRC_N=$(find "${STAGE}/annotate" -name '*.json' 2>/dev/null | wc -l | tr -d ' ')
-WIN_N=$(sshpass -p "$WIN_PASS" ssh -o StrictHostKeyChecking=accept-new "${WIN_USER}@${WIN_IP}" "dir /b /s \"${WIN_DATA}\\*.json\" 2>nul | find /c /v \"\"" 2>/dev/null || echo 0)
+WIN_N=$(sshpass -p "$WIN_PASS" ssh -o StrictHostKeyChecking=accept-new "${WIN_USER}@${WIN_IP}" "dir /b /s \"${WIN_DATA}\\*.json\" 2>nul | find /c /v \"\"" 2>/dev/null | tr -cd '0-9' || echo 0)
 if [ "${KEEP_VM_ANNOT:-0}" = "1" ]; then
   echo "   [跳过] 已设置 KEEP_VM_ANNOT=1，保留 VM115 标注。"
 elif [ "${WIN_N:-0}" -ge "${SRC_N:-0}" ] && [ "${SRC_N:-0}" -gt 0 ]; then
@@ -61,8 +61,8 @@ if [ "${SYNC_ONLY:-0}" = "1" ]; then
   exit 0
 fi
 
-echo "== 3) Windows 上转换 + 重训（CPU/GPU 自动）=="
-"${SSH_WIN[@]}" "cd ${WIN_REPO} && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\labelme2yolo.py > C:\\Users\\dsh\\office-vision-training\\train.log 2>&1 && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\train_cigarette.py --finetune --epochs 100 --imgsz 640 --batch 16 >> C:\\Users\\dsh\\office-vision-training\\train.log 2>&1; echo TRAIN_EXIT=$?"
+echo "== 3) Windows 上转换 + 重训（从上一版 best 微调）=="
+"${SSH_WIN[@]}" "cd ${WIN_REPO} && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\labelme2yolo.py > C:\\Users\\dsh\\office-vision-training\\train.log 2>&1 && C:\\Users\\dsh\\office-vision-training\\.venv\\Scripts\\python.exe scripts\\train_cigarette.py --weights C:\\Users\\dsh\\office-vision-training\\office-vision\\yolo-training\\weights\\cigarette-best.pt --epochs 80 --imgsz 640 --batch 32 >> C:\\Users\\dsh\\office-vision-training\\train.log 2>&1; echo TRAIN_EXIT=$?"
 echo "   训练日志：Windows C:\\Users\\dsh\\office-vision-training\\train.log"
 rm -rf "$STAGE"
 echo "== 完成。训练产出 best.pt 后复制回部署：runs/detect/cigarette/weights/best.pt → weights/cigarette-best.pt =="
