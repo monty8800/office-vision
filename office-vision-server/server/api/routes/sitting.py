@@ -99,10 +99,17 @@ class SittingSessionList(BaseModel):
 
 # ---- 核心：occupant 时间线 → 合并坐席会话 ----
 
+_OCCUPANCY_QUERY_LIMIT = 5000  # 最多取最近 N 条 occupant 事件，防驻留振荡刷爆库导致查询慢
+
+
 async def _fetch_occupancy(
     session: AsyncSession, device_id: str | None, until: datetime | None = None
 ) -> list[tuple[datetime, bool]]:
-    """按时间升序返回 (occurred_at, occupant) 列表（含 until 之前全部，用于初始状态）。"""
+    """按时间升序返回最近 N 条 (occurred_at, occupant) 事件（用于构建 occupant 时间线）。
+
+    只取最近 _OCCUPANCY_QUERY_LIMIT 条：即便驻留状态机异常刷出海量 Presence 事件，
+    坐席分析也能限定在最近时间窗内，避免读几十万条拖慢接口。
+    """
     stmt = select(EventLog.occurred_at, EventLog.event_type).where(
         EventLog.event_type.in_(_OCCUPANCY_EVENTS)
     )
@@ -110,9 +117,12 @@ async def _fetch_occupancy(
         stmt = stmt.where(EventLog.occurred_at <= until)
     if device_id:
         stmt = stmt.where(EventLog.device_id == device_id)
-    stmt = stmt.order_by(EventLog.occurred_at.asc())
+    # 按时间倒序取最近 N 条，再反转回升序
+    stmt = stmt.order_by(EventLog.occurred_at.desc()).limit(_OCCUPANCY_QUERY_LIMIT)
     rows = (await session.execute(stmt)).all()
-    return [(r[0], r[1] in _OCCUPANT_TRUE) for r in rows]
+    events = [(r[0], r[1] in _OCCUPANT_TRUE) for r in rows]
+    events.reverse()
+    return events
 
 
 def _build_merged(

@@ -128,6 +128,10 @@ class PresenceManager:
             self._entry_time = timestamp
         if person_present:
             self._last_seen = timestamp
+        elif self._last_seen <= 0.0:
+            # 从未真实见到人时，用启动时刻作"最后见人"基准，避免
+            # _from_away 里 timestamp-0.0>=sleep_after 恒成立而瞬间休眠、来回振荡刷事件
+            self._last_seen = self._entry_time or timestamp
         if self._state is PresenceState.WAITING:
             return self._from_waiting(person_present, timestamp)
         if self._state is PresenceState.WORKING:
