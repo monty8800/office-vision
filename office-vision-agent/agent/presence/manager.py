@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -114,11 +115,18 @@ class PresenceManager:
         cur = local.hour * 60 + local.minute
         return cur >= self._hhmm(self._settings.off_hours_end)
 
-    def force_wake(self) -> list[Event]:
-        """外部（如 08:00）强制唤醒：SLEEPING → AWAY，摄像头保持开启等待人。"""
+    def force_wake(self, timestamp: float | None = None) -> list[Event]:
+        """外部（如 08:00）强制唤醒：SLEEPING → AWAY，摄像头保持开启等待人。
+
+        必须重置休眠计时（_last_seen=唤醒时刻）：否则 AWAY 里
+        `timestamp - _last_seen >= sleep_after` 因 _last_seen 陈旧而恒成立，
+        会立刻又进入 SLEEPING，与"过了 08:00 就强制唤醒"形成
+        SLEEPING↔AWAY 高速振荡，按帧率刷出海量 PresenceSleeping/Resumed 事件。
+        """
         if self._state is PresenceState.SLEEPING:
             self._state = PresenceState.AWAY
             self._return_first_seen = None
+            self._last_seen = timestamp if timestamp is not None else time.time()
             return [PresenceResumed(device_id=self._device_id)]
         return []
 

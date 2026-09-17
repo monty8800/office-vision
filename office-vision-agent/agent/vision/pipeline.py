@@ -83,8 +83,9 @@ class VisionPipeline:
             sleeping = self._presence.state is PresenceState.SLEEPING
             if sleeping:
                 # 08:00 准时开启：若已过凌晨窗口结束点，强制唤醒（摄像头保持开启去等上班）
+                # force_wake 会重置休眠计时，避免"唤醒→立刻又休眠"高速振荡刷事件
                 if self._presence.past_off_hours_end(time.time()):
-                    for event in self._presence.force_wake():
+                    for event in self._presence.force_wake(time.time()):
                         await self._bus.publish(event)
                     if not self._camera.is_open:
                         self._camera.start()

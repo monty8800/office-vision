@@ -99,30 +99,32 @@ class SittingSessionList(BaseModel):
 
 # ---- 核心：occupant 时间线 → 合并坐席会话 ----
 
-_OCCUPANCY_QUERY_LIMIT = 5000  # 最多取最近 N 条 occupant 事件，防驻留振荡刷爆库导致查询慢
+_OCCUPANCY_QUERY_LIMIT = 20000  # 安全上限（按时间窗取正常仅数千条；此值仅防极端异常）
 
 
 async def _fetch_occupancy(
-    session: AsyncSession, device_id: str | None, until: datetime | None = None
+    session: AsyncSession,
+    device_id: str | None,
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> list[tuple[datetime, bool]]:
-    """按时间升序返回最近 N 条 (occurred_at, occupant) 事件（用于构建 occupant 时间线）。
+    """按时间升序返回 [since, until] 内的 (occurred_at, occupant) 事件。
 
-    只取最近 _OCCUPANCY_QUERY_LIMIT 条：即便驻留状态机异常刷出海量 Presence 事件，
-    坐席分析也能限定在最近时间窗内，避免读几十万条拖慢接口。
+    按**时间窗**取（而非无条件全量），使坐席分析限定在所需区间；另设一个较高上限
+    作为安全网，防驻留状态机万一再异常刷出海量事件把接口拖慢。
     """
     stmt = select(EventLog.occurred_at, EventLog.event_type).where(
         EventLog.event_type.in_(_OCCUPANCY_EVENTS)
     )
+    if since is not None:
+        stmt = stmt.where(EventLog.occurred_at >= since)
     if until is not None:
         stmt = stmt.where(EventLog.occurred_at <= until)
     if device_id:
         stmt = stmt.where(EventLog.device_id == device_id)
-    # 按时间倒序取最近 N 条，再反转回升序
-    stmt = stmt.order_by(EventLog.occurred_at.desc()).limit(_OCCUPANCY_QUERY_LIMIT)
+    stmt = stmt.order_by(EventLog.occurred_at.asc()).limit(_OCCUPANCY_QUERY_LIMIT)
     rows = (await session.execute(stmt)).all()
-    events = [(r[0], r[1] in _OCCUPANT_TRUE) for r in rows]
-    events.reverse()
-    return events
+    return [(r[0], r[1] in _OCCUPANT_TRUE) for r in rows]
 
 
 def _build_merged(
@@ -196,9 +198,13 @@ def _day_agg(
 
 
 async def _segments_until(
-    session: AsyncSession, device_id: str | None, until: datetime, merge_gap: float
+    session: AsyncSession,
+    device_id: str | None,
+    until: datetime,
+    merge_gap: float,
+    since: datetime | None = None,
 ) -> tuple[list[list[datetime | None]], bool]:
-    events = await _fetch_occupancy(session, device_id, until)
+    events = await _fetch_occupancy(session, device_id, since, until)
     return _build_merged(events, merge_gap)
 
 
@@ -215,7 +221,7 @@ async def sitting_today(
     day_start = _local_day_start_utc(day)
     now_utc = datetime.now(UTC).replace(tzinfo=None)
     segments, final_occupant = await _segments_until(
-        session, device_id, now_utc, merge_gap_seconds
+        session, device_id, now_utc, merge_gap_seconds, since=day_start - timedelta(days=1)
     )
     total, sessions, leaves, clamped = _day_agg(segments, day_start, now_utc)
 
@@ -258,7 +264,10 @@ async def sitting_daily(
 ) -> SittingDaily:
     today = datetime.now().astimezone().date()
     now_utc = datetime.now(UTC).replace(tzinfo=None)
-    segments, _ = await _segments_until(session, device_id, now_utc, merge_gap_seconds)
+    since = _local_day_start_utc(today - timedelta(days=days))
+    segments, _ = await _segments_until(
+        session, device_id, now_utc, merge_gap_seconds, since=since
+    )
 
     result: list[SittingDay] = []
     for i in range(days):
@@ -289,7 +298,13 @@ async def sitting_sessions(
     merge_gap_seconds: float = Query(default=_DEFAULT_MERGE_GAP, ge=0, le=3600),
 ) -> SittingSessionList:
     now_utc = datetime.now(UTC).replace(tzinfo=None)
-    segments, _ = await _segments_until(session, device_id, now_utc, merge_gap_seconds)
+    segments, _ = await _segments_until(
+        session,
+        device_id,
+        now_utc,
+        merge_gap_seconds,
+        since=now_utc - timedelta(days=92),
+    )
 
     items: list[SessionItem] = []
     for s, e in segments:
@@ -346,7 +361,13 @@ async def sitting_range(
         start, end = end, start
     end = min(end, today)
     now_utc = datetime.now(UTC).replace(tzinfo=None)
-    segments, _ = await _segments_until(session, device_id, now_utc, merge_gap_seconds)
+    segments, _ = await _segments_until(
+        session,
+        device_id,
+        now_utc,
+        merge_gap_seconds,
+        since=_local_day_start_utc(start) - timedelta(days=1),
+    )
 
     day_list: list[SittingRangeDay] = []
     d = start
