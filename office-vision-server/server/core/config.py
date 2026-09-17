@@ -37,7 +37,7 @@ class EventsSection:
 
 @dataclass(frozen=True)
 class LogsSection:
-    retention_days: int = 14
+    retention_days: int = 7
 
 
 @dataclass(frozen=True)
